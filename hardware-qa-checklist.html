@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gen2 Mini QA Checklist</title>
+
+<!-- Tailwind CSS via CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          graphite: {
+            950: '#15181A',
+            900: '#1B1F22',
+            800: '#22262A',
+            700: '#2C3237',
+            600: '#3A4147',
+            500: '#565F66',
+            400: '#7C858C',
+            300: '#A6ADB2',
+            200: '#CBCFD2',
+            100: '#E8E9EA',
+          },
+          leaf: {
+            500: '#22A559',
+            600: '#1B8A49',
+          },
+          pass: '#2F9E44',
+          fail: '#E03131',
+        },
+      },
+    },
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  body { background-color: #15181A; }
+
+  /* subtle blueprint dot grid on the page background */
+  .grid-backdrop {
+    background-image: radial-gradient(circle, #2C3237 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  input:focus-visible,
+  button:focus-visible {
+    outline: 2px solid #22A559;
+    outline-offset: 2px;
+  }
+
+  .pf-btn[data-active="true"][data-value="pass"] {
+    background-color: rgba(47,158,68,0.15);
+    border-color: #2F9E44;
+    color: #5FCB79;
+  }
+  .pf-btn[data-active="true"][data-value="fail"] {
+    background-color: rgba(224,49,49,0.15);
+    border-color: #E03131;
+    color: #F27878;
+  }
+
+  .invalid-ring { box-shadow: 0 0 0 1px #E03131; border-color: #E03131 !important; }
+
+  input[type="date"] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    color-scheme: dark;
+  }
+  input[type="date"]::-webkit-datetime-edit,
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+  /* iOS Safari renders the value through this pseudo-element and centers it by default */
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* Keyboard-navigable checklist cells — a full frame, not just an outline,
+     so Pass/Fail look consistent. White while undecided, colored once answered. */
+  .qa-row {
+    border: 2px solid transparent;
+    border-radius: 0.5rem;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .qa-row:focus-visible,
+  .qa-row:focus {
+    border-color: #E8E9EA;
+    outline: none;
+  }
+  .qa-row[data-selected="pass"] {
+    border-color: #2F9E44;
+    background-color: rgba(47, 158, 68, 0.08);
+  }
+  .qa-row[data-selected="fail"] {
+    border-color: #E03131;
+    background-color: rgba(224, 49, 49, 0.08);
+  }
+
+  .home-card { transition: border-color 150ms ease, transform 150ms ease; }
+  .home-card:hover { transform: translateY(-2px); }
+
+  /* Sticky bottom nav so Back/Next/Submit stay reachable while scrolling */
+  #wizard-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    background: linear-gradient(to top, #15181A 65%, rgba(21, 24, 26, 0));
+    padding-top: 1.25rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+
+  /* Sticky first column for the multi-kiosk matrix tables */
+  .matrix-wrap { overflow-x: auto; position: relative; }
+  .matrix-wrap.has-scroll-fade::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 28px;
+    background: linear-gradient(to right, transparent, rgba(27, 31, 34, 0.95));
+    pointer-events: none;
+  }
+  .matrix-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  .sticky-col {
+    position: sticky;
+    left: 0;
+    background-color: #1B1F22;
+    z-index: 5;
+  }
+  .matrix-table thead th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: #A6ADB2;
+    text-align: center;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid #2C3237;
+    white-space: nowrap;
+    width: 84px;
+  }
+  .matrix-table thead th.sticky-col { text-align: left; color: #CBCFD2; }
+  .matrix-table tbody td {
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid #22262A;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .matrix-table tbody td.sticky-col {
+    text-align: left;
+    color: #CBCFD2;
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .matrix-table th.sticky-col,
+  .matrix-table td.sticky-col {
+    width: 200px;
+  }
+  .matrix-table tbody tr:last-child td { border-bottom: none; }
+
+  .pf-btn-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.375rem;
+    border-width: 1px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+
+<body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
+
+  <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-6 sm:py-10">
+
+    <!-- ================= HOME VIEW ================= -->
+    <section id="view-home" class="view active flex flex-1 flex-col justify-center">
+      <div class="mb-8 text-center">
+        <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
+        <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">Gen2 Mini QA Checklist</h1>
+        <p class="mt-2 text-sm text-graphite-400">Choose what you'd like to do.</p>
+      </div>
+
+      <div id="draft-list-wrap" class="mb-4 hidden space-y-2">
+        <p class="text-xs font-medium text-graphite-400">Unfinished inspections</p>
+        <div id="draft-list" class="space-y-2"></div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <button
+          id="btn-home-new"
+          type="button"
+          class="home-card flex flex-col items-start gap-3 rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 text-left shadow-lg shadow-black/20 hover:border-leaf-500"
+        >
+          <span class="flex h-10 w-10 items-center justify-center rounded-md bg-leaf-500/15 text-leaf-500">
+            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
+            </svg>
+          </span>
+          <span class="text-base font-semibold text-graphite-100">Start QA process</span>
+          <span class="text-sm text-graphite-400">Start a new inspection for one or more kiosks.</span>
+        </button>
+
+        <button
+          id="btn-home-sheet"
+          type="button"
+          class="home-card flex flex-col items-start gap-3 rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 text-left shadow-lg shadow-black/20 hover:border-leaf-500"
+        >
+          <span class="flex h-10 w-10 items-center justify-center rounded-md bg-leaf-500/15 text-leaf-500">
+            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h12v2H4V6zm0 4h5v4H4v-4zm7 0h5v4h-5v-4z" />
+            </svg>
+          </span>
+          <span class="text-base font-semibold text-graphite-100">QA checklist sheet</span>
+          <span class="text-sm text-graphite-400">Open the shared spreadsheet of submitted inspections.</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ================= WIZARD VIEW ================= -->
+    <section id="view-wizard" class="view flex flex-1 flex-col">
+
+      <!-- Header -->
+      <header class="mb-6 flex items-center justify-between sm:mb-8">
+        <div>
+          <p class="font-mono text-xs tracking-wide text-leaf-500">INSPECTION FORM</p>
+          <h1 class="mt-1 text-xl font-semibold text-graphite-100 sm:text-2xl">Gen2 Mini QA Checklist</h1>
+        </div>
+        <button
+          id="btn-back"
+          type="button"
+          class="flex-shrink-0 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500"
+        >
+          Home
+        </button>
+      </header>
+
+      <main class="flex-1 space-y-5">
+
+        <!-- KIOSK INFO -->
+        <section class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6">
+          <h2 class="text-lg font-semibold text-graphite-100">Kiosk serial numbers</h2>
+          <p class="mt-1 text-sm text-graphite-400">Enter the serial number for each kiosk. Format: <span class="font-mono text-graphite-200">M</span>, a hyphen, then five letters (no numbers) — e.g. <span class="font-mono text-graphite-200">M-ABCDE</span>. At least the first kiosk is required. Add more kiosks to inspect them side by side below.</p>
+
+          <div class="mt-5">
+            <label for="inspection-date" class="mb-1 flex items-center gap-1.5 text-sm font-medium text-graphite-200">
+              Inspection date <span class="text-leaf-500">*</span>
+            </label>
+            <div class="relative">
+              <input
+                id="inspection-date"
+                type="date"
+                class="w-full max-w-full box-border appearance-none rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 font-mono text-base text-transparent caret-transparent transition focus:border-leaf-500"
+              />
+              <div
+                id="inspection-date-display"
+                class="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-3 font-mono text-base text-graphite-100"
+              >
+                <span id="inspection-date-text">Select date</span>
+                <svg class="h-4 w-4 flex-shrink-0 text-graphite-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M6 2a1 1 0 011 1v1h6V3a1 1 0 112 0v1h1a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2h1V3a1 1 0 011-1zm10 6H4v8h12V8z" clip-rule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-5 space-y-4" id="serial-inputs">
+            <!-- generated by JS -->
+          </div>
+
+          <div class="mt-3 flex items-center gap-4">
+            <button
+              id="btn-add-serial"
+              type="button"
+              class="flex items-center gap-1.5 text-sm font-medium text-leaf-500 transition hover:text-leaf-600"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
+              </svg>
+              Add another serial number
+            </button>
+            <button
+              id="btn-remove-serial"
+              type="button"
+              class="hidden flex items-center gap-1.5 text-sm font-medium text-graphite-400 transition hover:text-fail"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M4 9a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z" />
+              </svg>
+              Remove last serial number
+            </button>
+          </div>
+
+          <p id="serial-error" class="mt-3 hidden text-sm text-fail"></p>
+        </section>
+
+        <!-- CHECKLIST MATRIX (built by JS: one column per active kiosk) -->
+        <div id="matrix-root" class="space-y-5"></div>
+
+        <!-- PER-KIOSK COMMENTS -->
+        <section id="comments-section" class="hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6">
+          <h2 class="text-lg font-semibold text-graphite-100">Comment</h2>
+          <p class="mt-1 text-sm text-graphite-400">Optional notes, one per kiosk.</p>
+          <div id="comments-grid" class="mt-4 grid gap-4 sm:grid-cols-2"></div>
+        </section>
+
+        <p id="submit-error" class="hidden text-sm text-fail"></p>
+        <div id="submit-status" class="hidden rounded-md border p-3 text-sm"></div>
+
+        <!-- Post-submission actions -->
+        <div id="post-submit-actions" class="hidden flex flex-col gap-2.5 sm:flex-row">
+          <button
+            id="btn-done-new"
+            type="button"
+            class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500"
+          >
+            Start a new QA process
+          </button>
+          <button
+            id="btn-done-sheet"
+            type="button"
+            class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500"
+          >
+            Open QA checklist sheet
+          </button>
+        </div>
+
+      </main>
+
+      <!-- Nav -->
+      <footer id="wizard-nav" class="mt-5 flex items-center justify-end gap-3">
+        <button id="btn-submit" type="button"
+          class="rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-60">
+          Submit inspection
+        </button>
+      </footer>
+
+    </section>
+
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // CONFIG
+  // ---------------------------------------------------------------------
+  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwKwwqKaetORQ1AZQLvKO0TPj9qK8GK_rIfGVrCntSoEwZICfMpTmmzoFNf80X539JyPQ/exec";
+  const SHEET_URL = "https://docs.google.com/spreadsheets/d/1oni2xKa8IdRIW_Q7hNd1DTPU9WoT17Z0tYYlOnd20Jg/edit?gid=1444761320#gid=1444761320";
+  const DRAFTS_KEY = "qaChecklistDrafts_v1";
+  const SERIAL_COUNT = 5;
+
+  // The draft currently open in the wizard, if any. Every unfinished
+  // inspection is saved under its own id, so starting a new one never
+  // touches or discards any other saved draft.
+  let currentDraftId = null;
+
+  function generateDraftId() {
+    return "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  // ---------------------------------------------------------------------
+  // VIEW SWITCHING (Home <-> Wizard)
+  // ---------------------------------------------------------------------
+  const viewHome = document.getElementById("view-home");
+  const viewWizard = document.getElementById("view-wizard");
+  const draftListWrap = document.getElementById("draft-list-wrap");
+  const draftList = document.getElementById("draft-list");
+
+  function showHome() {
+    viewWizard.style.display = "none";
+    viewHome.style.display = "flex";
+    pendingDeleteId = null;
+    refreshDraftList();
+  }
+
+  function showWizard() {
+    viewHome.style.display = "none";
+    viewWizard.style.display = "flex";
+  }
+
+  function openSheet() {
+    window.open(SHEET_URL, "_blank", "noopener");
+  }
+
+  document.getElementById("btn-home-new").addEventListener("click", () => {
+    currentDraftId = generateDraftId();
+    resetWizard();
+    showWizard();
+  });
+  document.getElementById("btn-home-sheet").addEventListener("click", openSheet);
+  document.getElementById("btn-done-sheet").addEventListener("click", openSheet);
+  document.getElementById("btn-done-new").addEventListener("click", () => {
+    currentDraftId = generateDraftId();
+    resetWizard();
+    showWizard();
+  });
+
+  let pendingDeleteId = null;
+
+  draftList.addEventListener("click", (e) => {
+    const resumeBtn = e.target.closest("[data-resume-draft]");
+    const deleteBtn = e.target.closest("[data-delete-draft]");
+    const confirmBtn = e.target.closest("[data-confirm-delete]");
+    const cancelBtn = e.target.closest("[data-cancel-delete]");
+
+    if (resumeBtn) {
+      const draft = cachedDrafts.find((d) => d.id === resumeBtn.dataset.resumeDraft);
+      if (draft) {
+        currentDraftId = draft.id;
+        applyDraft(draft);
+        showWizard();
+      }
+    } else if (deleteBtn) {
+      // First click just asks for confirmation inline — no native dialog,
+      // which some mobile/embedded browsers silently block.
+      pendingDeleteId = deleteBtn.dataset.deleteDraft;
+      refreshDraftList();
+    } else if (confirmBtn) {
+      deleteDraft(confirmBtn.dataset.confirmDelete);
+      pendingDeleteId = null;
+      refreshDraftList();
+    } else if (cancelBtn) {
+      pendingDeleteId = null;
+      refreshDraftList();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // CHECKLIST DATA
+  // ---------------------------------------------------------------------
+  // Display-only notes shown under specific items. These are NOT part of the
+  // item label sent in the submission payload — the payload keeps plain text.
+  const ITEM_HINTS = {
+    "InTune enrollment check": `(look for this indicator <svg class="inline h-4 w-4 align-text-bottom" viewBox="0 0 24 24" fill="#3B5BDB" aria-hidden="true"><path d="M12 1.5l8 3v6.5c0 5.25-3.4 9.74-8 11-4.6-1.26-8-5.75-8-11V4.5l8-3z"/></svg> on the dashboard next to the serial number)`,
+  };
+
+  const CHECKLISTS = {
+    2: {
+      title: "Functional checks",
+      items: [
+        "Monitor brightness 100%",
+        "Kiosk app volume 50%",
+        "Red LED",
+        "Green LED",
+        "White LED",
+        "Teamviewer connection",
+        "Windows activation check",
+        "InTune enrollment check",
+        "Connector board status LED",
+        "Camera quality & correct FOV",
+        "Serial number check",
+      ],
+    },
+    3: {
+      title: "Base",
+      items: [
+        "Base damage",
+        "Sticker damage",
+      ],
+    },
+    4: {
+      title: "PMS",
+      warning: "Always lock the kiosk app (White LED OFF) before starting these checks.",
+      items: [
+        "PMS base fit / damage",
+        "PMS back fit / damage",
+        "PMS screen fit / damage",
+        "Cables (LEDs, Monitor, Grounding)",
+        "PMS to housing screws + washers",
+        "Camera cover fit",
+        "Camera cover screws",
+        "Glass fit / damage",
+        "Glass screws",
+        "PMS screen fixing screws",
+      ],
+    },
+    5: {
+      title: "Housing",
+      items: [
+        "Housing damage",
+        "Protector fit / damage",
+        "Protector screws",
+        "Grounding wire",
+        "Camera cables",
+        "LED cables",
+        "Connector board",
+        "Fan (2x)",
+        "Fan cables",
+        "Computer box fit / damage",
+        "Cable cover fit / damage",
+        "Connector cover fit / damage",
+        "Computer box screws + washers",
+        "Connector cover screws",
+        "ESD check",
+      ],
+    },
+  };
+  const SECTION_KEYS = Object.keys(CHECKLISTS);
+
+  // ---------------------------------------------------------------------
+  // MULTI-KIOSK STATE
+  // ---------------------------------------------------------------------
+  let kioskCount = 1;
+  let serialValues = new Array(SERIAL_COUNT).fill("");
+  let kioskAnswers = []; // kioskAnswers[k][step] = ["pass"|"fail"|null, ...]
+  let kioskComments = new Array(SERIAL_COUNT).fill("");
+
+  function freshAnswerSet() {
+    const set = {};
+    SECTION_KEYS.forEach((step) => {
+      set[step] = new Array(CHECKLISTS[step].items.length).fill(null);
+    });
+    return set;
+  }
+
+  // ---------------------------------------------------------------------
+  // SERIAL / DATE INPUTS
+  // ---------------------------------------------------------------------
+  const serialInputsWrap = document.getElementById("serial-inputs");
+  const dateInput = document.getElementById("inspection-date");
+  const dateText = document.getElementById("inspection-date-text");
+
+  function todayISO() {
+    const d = new Date();
+    const tz = d.getTimezoneOffset();
+    return new Date(d.getTime() - tz * 60000).toISOString().slice(0, 10);
+  }
+
+  function updateDateDisplay() {
+    if (!dateInput.value) {
+      dateText.textContent = "Select date";
+      dateText.classList.add("text-graphite-500");
+      return;
+    }
+    dateText.classList.remove("text-graphite-500");
+    const [y, m, d] = dateInput.value.split("-").map(Number);
+    const localDate = new Date(y, m - 1, d);
+    dateText.textContent = localDate.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  dateInput.value = todayISO();
+  updateDateDisplay();
+  dateInput.addEventListener("input", () => {
+    dateInput.classList.remove("invalid-ring");
+    document.getElementById("serial-error").classList.add("hidden");
+    updateDateDisplay();
+    saveDraft();
+  });
+
+  // Force uppercase, fixed "M-" prefix, and letters-only for the remaining 5 characters.
+  function formatSerial(raw) {
+    const value = raw.toUpperCase();
+    const source = value.startsWith("M-") ? value.slice(2) : value;
+    const suffix = source.replace(/[^A-Z]/g, "").slice(0, 5);
+    if (suffix.length === 0) return "";
+    return "M-" + suffix;
+  }
+
+  function isValidSerial(value) {
+    return /^M-[A-Z]{5}$/.test(value);
+  }
+
+  function addSerialField(i, shouldFocus = true) {
+    const required = i === 0;
+    const row = document.createElement("div");
+    row.dataset.serialRow = i;
+    row.innerHTML = `
+      <label for="sn-${i}" class="mb-1 flex items-center gap-1.5 text-sm font-medium text-graphite-200">
+        Serial number ${i + 1}
+        ${required ? '<span class="text-leaf-500">*</span>' : '<span class="text-graphite-500 font-normal">(optional)</span>'}
+      </label>
+      <input
+        id="sn-${i}"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        placeholder="M-NNNNN"
+        maxlength="7"
+        class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 font-mono text-base tracking-wider text-graphite-100 placeholder-graphite-500 transition focus:border-leaf-500"
+        data-index="${i}"
+        data-required="${required}"
+      />
+    `;
+    serialInputsWrap.appendChild(row);
+
+    const input = row.querySelector("input");
+    input.value = serialValues[i] || "";
+    input.addEventListener("input", (e) => {
+      const idx = Number(e.target.dataset.index);
+      const formatted = formatSerial(e.target.value);
+      e.target.value = formatted;
+      serialValues[idx] = formatted;
+      // Clear this field's own format-error ring; a fresh duplicate check
+      // right after will re-flag it (and any match) if still duplicated.
+      e.target.classList.remove("invalid-ring");
+      document.getElementById("serial-error").classList.add("hidden");
+      checkDuplicateSerials();
+      updateAddRemoveVisibility();
+      // Whether the checklist for this kiosk shows at all depends on
+      // whether it now has a serial, so rebuild rather than just relabel.
+      rebuildMatrix();
+      rebuildComments();
+      saveDraft();
+    });
+
+    if (shouldFocus) input.focus();
+  }
+
+  function updateAddRemoveVisibility() {
+    const btnAdd = document.getElementById("btn-add-serial");
+    const hasDup = duplicateKioskIndices().size > 0;
+    btnAdd.classList.toggle("hidden", kioskCount >= SERIAL_COUNT);
+    btnAdd.disabled = hasDup;
+    btnAdd.classList.toggle("opacity-40", hasDup);
+    btnAdd.classList.toggle("cursor-not-allowed", hasDup);
+    btnAdd.title = hasDup ? "Fix the duplicate serial number before adding another kiosk." : "";
+    document.getElementById("btn-remove-serial").classList.toggle("hidden", kioskCount <= 1);
+  }
+
+  function hasKiosk(k) {
+    return !!(serialValues[k] && serialValues[k].length > 0);
+  }
+
+  // Indices that repeat an earlier kiosk's serial (the first occurrence is
+  // never considered a duplicate — only the later, extra one(s) are).
+  function duplicateKioskIndices() {
+    const seen = {};
+    const dupes = new Set();
+    for (let k = 0; k < kioskCount; k++) {
+      const value = serialValues[k];
+      if (!value) continue;
+      if (seen[value] !== undefined) {
+        dupes.add(k);
+      } else {
+        seen[value] = k;
+      }
+    }
+    return dupes;
+  }
+
+  function activeKioskIndices() {
+    const dupes = duplicateKioskIndices();
+    const arr = [];
+    for (let k = 0; k < kioskCount; k++) {
+      if (hasKiosk(k) && !dupes.has(k)) arr.push(k);
+    }
+    return arr;
+  }
+
+  function kioskLabel(k) {
+    return hasKiosk(k) ? serialValues[k] : `Kiosk ${k + 1}`;
+  }
+
+  function addKiosk() {
+    if (kioskCount >= SERIAL_COUNT || duplicateKioskIndices().size > 0) return;
+    const idx = kioskCount;
+    kioskAnswers[idx] = freshAnswerSet();
+    kioskComments[idx] = kioskComments[idx] || "";
+    kioskCount += 1;
+    addSerialField(idx, true);
+    updateAddRemoveVisibility();
+    rebuildMatrix();
+    rebuildComments();
+    saveDraft();
+  }
+
+  // Remove any kiosk column (kept general in case it's needed elsewhere).
+  // Everything after it shifts down by one, keeping serials, answers and comments aligned.
+  function removeKioskAt(index) {
+    if (kioskCount <= 1) return;
+    serialValues.splice(index, 1);
+    serialValues.push("");
+    kioskComments.splice(index, 1);
+    kioskComments.push("");
+    kioskAnswers.splice(index, 1);
+    kioskCount -= 1;
+
+    serialInputsWrap.innerHTML = "";
+    for (let i = 0; i < kioskCount; i++) addSerialField(i, false);
+    updateAddRemoveVisibility();
+    rebuildMatrix();
+    rebuildComments();
+    saveDraft();
+  }
+
+  function removeLastKiosk() {
+    removeKioskAt(kioskCount - 1);
+  }
+
+  document.getElementById("btn-add-serial").addEventListener("click", addKiosk);
+  document.getElementById("btn-remove-serial").addEventListener("click", removeLastKiosk);
+
+  // Checks all active kiosks for a repeated serial number, flags the
+  // matching inputs, and shows/hides the warning. Runs both live (on every
+  // keystroke) and at submit. Remembers which inputs it flagged so a
+  // resolved duplicate correctly un-highlights its former match too.
+  let lastDuplicateIndices = [];
+
+  function checkDuplicateSerials() {
+    const errorEl = document.getElementById("serial-error");
+
+    lastDuplicateIndices.forEach((idx) => {
+      const inp = serialInputsWrap.querySelector(`input[data-index="${idx}"]`);
+      if (inp) inp.classList.remove("invalid-ring");
+    });
+
+    let hasDuplicate = false;
+    const dupIndices = [];
+    const seen = {};
+
+    for (let k = 0; k < kioskCount; k++) {
+      const value = serialValues[k];
+      if (!value) continue;
+      if (seen[value] !== undefined) {
+        hasDuplicate = true;
+        dupIndices.push(seen[value], k);
+      } else {
+        seen[value] = k;
+      }
+    }
+
+    const uniqueDupIndices = [...new Set(dupIndices)];
+    uniqueDupIndices.forEach((idx) => {
+      const inp = serialInputsWrap.querySelector(`input[data-index="${idx}"]`);
+      if (inp) inp.classList.add("invalid-ring");
+    });
+    lastDuplicateIndices = uniqueDupIndices;
+
+    if (hasDuplicate) {
+      errorEl.textContent = "The same serial number is entered for more than one kiosk. Each kiosk needs a unique serial number.";
+      errorEl.classList.remove("hidden");
+    }
+
+    const firstInvalid = uniqueDupIndices.length
+      ? serialInputsWrap.querySelector(`input[data-index="${uniqueDupIndices[uniqueDupIndices.length - 1]}"]`)
+      : null;
+    return { hasDuplicate, firstInvalid };
+  }
+
+  function validateSerials() {
+    const errorEl = document.getElementById("serial-error");
+    let ok = true;
+    let firstInvalid = null;
+
+    if (!dateInput.value) {
+      ok = false;
+      dateInput.classList.add("invalid-ring");
+      firstInvalid = firstInvalid || dateInput;
+    } else {
+      dateInput.classList.remove("invalid-ring");
+    }
+
+    serialInputsWrap.querySelectorAll("input").forEach((input) => {
+      const idx = Number(input.dataset.index);
+      const required = input.dataset.required === "true";
+      const value = serialValues[idx];
+      const filled = value.length > 0;
+      const valid = filled ? isValidSerial(value) : !required;
+
+      if (!valid) {
+        ok = false;
+        input.classList.add("invalid-ring");
+        firstInvalid = firstInvalid || input;
+      } else {
+        input.classList.remove("invalid-ring");
+      }
+    });
+
+    const dupCheck = checkDuplicateSerials();
+    const hasDuplicate = dupCheck.hasDuplicate;
+    if (hasDuplicate) {
+      ok = false;
+      firstInvalid = firstInvalid || dupCheck.firstInvalid;
+    }
+
+    if (!ok) {
+      errorEl.textContent = hasDuplicate
+        ? "The same serial number is entered for more than one kiosk. Each kiosk needs a unique serial number."
+        : "Inspection date and serial number 1 are required. All entered serials must match the format M-NNNNN (letters only).";
+      errorEl.classList.remove("hidden");
+    } else {
+      errorEl.classList.add("hidden");
+    }
+    return { ok, firstInvalid };
+  }
+
+  // ---------------------------------------------------------------------
+  // CHECKLIST MATRIX — one column per active kiosk
+  // ---------------------------------------------------------------------
+  const matrixRoot = document.getElementById("matrix-root");
+
+  function setCell(k, step, idx, value) {
+    kioskAnswers[k][step][idx] = value;
+    const cell = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${idx}"]`);
+    if (cell) {
+      const btnPass = cell.querySelector('[data-value="pass"]');
+      const btnFail = cell.querySelector('[data-value="fail"]');
+      [btnPass, btnFail].forEach((b) => {
+        const active = b.dataset.value === value;
+        b.dataset.active = active ? "true" : "false";
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      cell.dataset.selected = value;
+    }
+    updateSectionCounter(step);
+    document.getElementById("submit-error").classList.add("hidden");
+    saveDraft();
+  }
+
+  function focusCell(k, step, idx) {
+    const items = CHECKLISTS[step].items;
+    const secPos = SECTION_KEYS.indexOf(String(step));
+
+    if (idx < 0) {
+      if (secPos > 0) {
+        const prevStep = SECTION_KEYS[secPos - 1];
+        focusCell(k, prevStep, CHECKLISTS[prevStep].items.length - 1);
+        return;
+      }
+      idx = 0; // first item of the first section — nothing further back
+    } else if (idx >= items.length) {
+      if (secPos < SECTION_KEYS.length - 1) {
+        const nextStep = SECTION_KEYS[secPos + 1];
+        focusCell(k, nextStep, 0);
+        return;
+      }
+      idx = items.length - 1; // last item of the last section — nothing further forward
+    }
+
+    const el = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${idx}"]`);
+    if (el) {
+      el.focus({ preventScroll: false });
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  function updateSectionCounter(step) {
+    const el = document.getElementById(`counter-${step}`);
+    if (!el) return;
+    let pass = 0, fail = 0, total = 0;
+    activeKioskIndices().forEach((k) => {
+      const list = kioskAnswers[k][step];
+      total += list.length;
+      pass += list.filter((v) => v === "pass").length;
+      fail += list.filter((v) => v === "fail").length;
+    });
+    const remaining = total - pass - fail;
+    el.textContent = `${pass} Pass · ${fail} Fail` + (remaining > 0 ? ` · ${remaining} remaining` : "");
+    el.classList.toggle("text-fail", fail > 0);
+  }
+
+  function rebuildMatrix() {
+    matrixRoot.innerHTML = "";
+
+    const activeKiosks = activeKioskIndices();
+    if (activeKiosks.length === 0) {
+      matrixRoot.innerHTML = `
+        <p class="rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
+          Enter a serial number above to start the checklist.
+        </p>
+      `;
+      return;
+    }
+
+    SECTION_KEYS.forEach((step) => {
+      const section = CHECKLISTS[step];
+      const card = document.createElement("section");
+      card.className = "rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6";
+
+      let warningHtml = "";
+      if (section.warning) {
+        warningHtml = `
+          <div class="mt-3 flex items-start gap-3 rounded-md border border-fail bg-fail/10 p-3">
+            <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-fail" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.514 2.63H3.72c-1.345 0-2.187-1.463-1.514-2.63L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+            </svg>
+            <p class="text-sm font-medium text-fail">${section.warning}</p>
+          </div>
+        `;
+      }
+
+      let headerCols = "";
+      activeKiosks.forEach((k) => {
+        headerCols += `<th class="min-w-[84px]" data-col-header="${k}">${kioskLabel(k)}</th>`;
+      });
+
+      let bodyRows = "";
+      section.items.forEach((label, idx) => {
+        const hint = ITEM_HINTS[label];
+        const hintHtml = hint
+          ? `<span class="mt-1 block text-xs font-normal leading-relaxed text-graphite-400">${hint}</span>`
+          : "";
+        let cols = "";
+        activeKiosks.forEach((k) => {
+          cols += `
+            <td>
+              <div class="qa-row inline-flex items-center justify-center gap-1 rounded-md p-1 outline-none" tabindex="0" data-kiosk="${k}" data-step="${step}" data-index="${idx}">
+                <button type="button" tabindex="-1" data-value="pass" data-active="false" aria-label="Pass" class="pf-btn pf-btn-sm border-graphite-600 bg-graphite-800 text-graphite-300">
+                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 10.5 8 14.5 16 5.5"/></svg>
+                </button>
+                <button type="button" tabindex="-1" data-value="fail" data-active="false" aria-label="Fail" class="pf-btn pf-btn-sm border-graphite-600 bg-graphite-800 text-graphite-300">
+                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+                </button>
+              </div>
+            </td>
+          `;
+        });
+        bodyRows += `
+          <tr>
+            <td class="sticky-col">${label}${hintHtml}</td>
+            ${cols}
+          </tr>
+        `;
+      });
+
+      card.innerHTML = `
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="text-lg font-semibold text-graphite-100">${section.title}</h2>
+        </div>
+        <p class="mt-1 font-mono text-xs text-graphite-400" id="counter-${step}"></p>
+        ${warningHtml}
+        <div class="matrix-wrap mt-4 -mx-4 sm:mx-0">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th class="sticky-col">Check item</th>
+                ${headerCols}
+              </tr>
+            </thead>
+            <tbody>
+              ${bodyRows}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      matrixRoot.appendChild(card);
+      updateSectionCounter(step);
+    });
+
+    // Wire up click + keyboard handlers for every cell
+    document.querySelectorAll(".qa-row[data-kiosk]").forEach((cell) => {
+      const k = Number(cell.dataset.kiosk);
+      const step = cell.dataset.step;
+      const idx = Number(cell.dataset.index);
+      const btnPass = cell.querySelector('[data-value="pass"]');
+      const btnFail = cell.querySelector('[data-value="fail"]');
+
+      // Restore existing state (e.g. after a rebuild when a kiosk is added/removed)
+      const existing = kioskAnswers[k] && kioskAnswers[k][step] ? kioskAnswers[k][step][idx] : null;
+      if (existing) {
+        [btnPass, btnFail].forEach((b) => {
+          const active = b.dataset.value === existing;
+          b.dataset.active = active ? "true" : "false";
+        });
+        cell.dataset.selected = existing;
+      }
+
+      btnPass.addEventListener("click", () => {
+        setCell(k, step, idx, "pass");
+        cell.focus({ preventScroll: true });
+      });
+      btnFail.addEventListener("click", () => {
+        setCell(k, step, idx, "fail");
+        cell.focus({ preventScroll: true });
+      });
+
+      cell.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          setCell(k, step, idx, "pass");
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          setCell(k, step, idx, "fail");
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          focusCell(k, step, idx + 1);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          focusCell(k, step, idx - 1);
+        } else if (e.key === " " || e.key === "Spacebar") {
+          e.preventDefault();
+          if (!kioskAnswers[k][step][idx]) setCell(k, step, idx, "pass");
+          focusCell(k, step, idx + 1);
+        }
+      });
+    });
+
+    setupScrollFades();
+  }
+
+  function updateScrollFade(wrap) {
+    const overflowing = wrap.scrollWidth > wrap.clientWidth + 1;
+    const atEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 1;
+    wrap.classList.toggle("has-scroll-fade", overflowing && !atEnd);
+  }
+
+  function setupScrollFades() {
+    document.querySelectorAll(".matrix-wrap").forEach((wrap) => {
+      updateScrollFade(wrap);
+      wrap.addEventListener("scroll", () => updateScrollFade(wrap));
+    });
+  }
+
+  window.addEventListener("resize", () => {
+    document.querySelectorAll(".matrix-wrap").forEach(updateScrollFade);
+  });
+
+  // ---------------------------------------------------------------------
+  // PER-KIOSK COMMENTS
+  // ---------------------------------------------------------------------
+  const commentsGrid = document.getElementById("comments-grid");
+
+  function rebuildComments() {
+    commentsGrid.innerHTML = "";
+    const activeKiosks = activeKioskIndices();
+    document.getElementById("comments-section").classList.toggle("hidden", activeKiosks.length === 0);
+
+    activeKiosks.forEach((k) => {
+      const block = document.createElement("div");
+      block.innerHTML = `
+        <label class="mb-1 flex items-center gap-1.5 text-sm font-medium text-graphite-200">
+          <span data-col-header="${k}">${kioskLabel(k)}</span>
+          <span class="text-graphite-500 font-normal">(optional)</span>
+        </label>
+        <textarea
+          rows="3"
+          placeholder="Add any additional notes about this kiosk…"
+          class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-sm text-graphite-100 placeholder-graphite-500 transition focus:border-leaf-500"
+          data-comment-kiosk="${k}"
+        ></textarea>
+      `;
+      commentsGrid.appendChild(block);
+      const textarea = block.querySelector("textarea");
+      textarea.value = kioskComments[k] || "";
+      textarea.addEventListener("input", (e) => {
+        kioskComments[k] = e.target.value;
+        saveDraft();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // GLOBAL KEYBOARD SHORTCUTS
+  // ---------------------------------------------------------------------
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    if (viewWizard.style.display === "none") return;
+    if (e.target.tagName === "TEXTAREA") return; // preserve newline in comments
+    e.preventDefault();
+    btnSubmit.click();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Backspace") return;
+    if (viewWizard.style.display === "none") return;
+    const tag = e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    e.preventDefault();
+    btnBack.click();
+  });
+
+  // ---------------------------------------------------------------------
+  // NAV
+  // ---------------------------------------------------------------------
+  const btnBack = document.getElementById("btn-back");
+  const btnSubmit = document.getElementById("btn-submit");
+  const wizardNav = document.getElementById("wizard-nav");
+  const postSubmitActions = document.getElementById("post-submit-actions");
+
+  btnBack.addEventListener("click", () => {
+    showHome();
+  });
+
+  // ---------------------------------------------------------------------
+  // FULL RESET (used when starting a fresh QA process)
+  // ---------------------------------------------------------------------
+  function resetWizard() {
+    kioskCount = 1;
+    serialValues = new Array(SERIAL_COUNT).fill("");
+    kioskAnswers = [freshAnswerSet()];
+    kioskComments = new Array(SERIAL_COUNT).fill("");
+
+    serialInputsWrap.innerHTML = "";
+    addSerialField(0, false);
+    updateAddRemoveVisibility();
+
+    dateInput.value = todayISO();
+    dateInput.classList.remove("invalid-ring");
+    updateDateDisplay();
+    document.getElementById("serial-error").classList.add("hidden");
+    document.getElementById("submit-error").classList.add("hidden");
+
+    rebuildMatrix();
+    rebuildComments();
+
+    document.getElementById("submit-status").classList.add("hidden");
+    postSubmitActions.classList.add("hidden");
+    wizardNav.classList.remove("hidden");
+    btnSubmit.disabled = false;
+    btnSubmit.textContent = "Submit inspection";
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ---------------------------------------------------------------------
+  // DRAFT PERSISTENCE (shared, via the Apps Script webhook) — a list of
+  // independent unfinished inspections, visible to anyone who opens this
+  // link, so starting a new one never discards another and a colleague can
+  // pick up where someone else left off. A small localStorage cache is kept
+  // per-draft purely as an instant/offline fallback.
+  // ---------------------------------------------------------------------
+  let cachedDrafts = []; // last list fetched from the server, used for Resume
+  let saveDraftTimer = null;
+
+  function localCacheKey(id) {
+    return DRAFTS_KEY + ":" + id;
+  }
+
+  // Save (insert or update) the draft currently open in the wizard.
+  // Debounced and sent to the shared server store; also cached locally
+  // immediately so nothing is lost if the network request fails.
+  function saveDraft() {
+    if (!currentDraftId) return;
+    const draft = {
+      id: currentDraftId,
+      dateValue: dateInput.value,
+      kioskCount,
+      serialValues,
+      kioskAnswers,
+      kioskComments,
+      savedAt: new Date().toISOString(),
+    };
+
+    try {
+      localStorage.setItem(localCacheKey(currentDraftId), JSON.stringify(draft));
+    } catch (e) {
+      // ignore (quota / private browsing)
+    }
+
+    clearTimeout(saveDraftTimer);
+    saveDraftTimer = setTimeout(() => {
+      fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "saveDraft", draft }),
+      }).catch((err) => {
+        console.error("Could not sync this draft to the shared server:", err);
+      });
+    }, 800);
+  }
+
+  // Fetch the full shared list of unfinished inspections from the server.
+  async function loadDrafts() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listDrafts`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.drafts)) return data.drafts;
+    } catch (err) {
+      console.error("Could not load shared drafts from the server:", err);
+    }
+    return [];
+  }
+
+  // Remove only the draft currently open in the wizard (e.g. after submitting it)
+  function clearDraft() {
+    if (!currentDraftId) return;
+    try {
+      localStorage.removeItem(localCacheKey(currentDraftId));
+    } catch (e) {
+      // ignore
+    }
+    fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "deleteDraft", id: currentDraftId }),
+    }).catch((err) => console.error("Could not clear this draft on the server:", err));
+  }
+
+  // Remove any specific draft by id (used by the ✕ button on the home screen)
+  function deleteDraft(id) {
+    if (!id) return;
+    try {
+      localStorage.removeItem(localCacheKey(id));
+    } catch (e) {
+      // ignore
+    }
+    fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "deleteDraft", id }),
+    }).catch((err) => console.error("Could not delete this draft on the server:", err));
+  }
+
+  function draftSummary(draft) {
+    const serials = (draft.serialValues || []).filter((v) => v);
+    return serials.join(", ");
+  }
+
+  async function refreshDraftList() {
+    draftListWrap.classList.remove("hidden");
+    draftList.innerHTML = `<p class="text-xs text-graphite-500">Loading unfinished inspections…</p>`;
+
+    const drafts = (await loadDrafts())
+      .filter((d) => (d.serialValues || []).some((v) => v))
+      .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+
+    cachedDrafts = drafts;
+
+    if (drafts.length === 0) {
+      draftListWrap.classList.add("hidden");
+      draftList.innerHTML = "";
+      return;
+    }
+
+    draftListWrap.classList.remove("hidden");
+    draftList.innerHTML = drafts
+      .map((draft) => {
+        if (pendingDeleteId === draft.id) {
+          return `
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-fail/60 bg-fail/10 p-3">
+              <p class="text-sm text-graphite-100">Discard this inspection? This can't be undone.</p>
+              <div class="flex flex-shrink-0 items-center gap-2">
+                <button type="button" data-confirm-delete="${draft.id}" class="rounded-md bg-fail px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
+                <button type="button" data-cancel-delete="${draft.id}" class="rounded-md border border-graphite-600 px-3 py-1.5 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
+              </div>
+            </div>
+          `;
+        }
+        const when = draft.savedAt
+          ? new Date(draft.savedAt).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+        return `
+          <div class="flex items-center justify-between gap-3 rounded-lg border border-leaf-500/50 bg-leaf-500/10 p-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-graphite-100">${escapeHtml(draftSummary(draft))}</p>
+              <p class="text-xs text-graphite-400">${when ? `saved ${when}` : ""}</p>
+            </div>
+            <div class="flex flex-shrink-0 items-center gap-2">
+              <button type="button" data-resume-draft="${draft.id}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</button>
+              <button type="button" data-delete-draft="${draft.id}" aria-label="Discard this inspection" class="rounded-md border border-graphite-600 px-2 py-1.5 text-xs text-graphite-400 transition hover:border-fail hover:text-fail">✕</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function applyDraft(draft) {
+    kioskCount = Math.min(Math.max(draft.kioskCount || 1, 1), SERIAL_COUNT);
+    serialValues =
+      draft.serialValues && draft.serialValues.length === SERIAL_COUNT
+        ? draft.serialValues.slice()
+        : new Array(SERIAL_COUNT).fill("");
+    kioskComments =
+      draft.kioskComments && draft.kioskComments.length === SERIAL_COUNT
+        ? draft.kioskComments.slice()
+        : new Array(SERIAL_COUNT).fill("");
+
+    kioskAnswers = [];
+    for (let k = 0; k < kioskCount; k++) {
+      const restored = draft.kioskAnswers && draft.kioskAnswers[k];
+      kioskAnswers[k] = restored ? restored : freshAnswerSet();
+      SECTION_KEYS.forEach((step) => {
+        if (!kioskAnswers[k][step]) kioskAnswers[k][step] = new Array(CHECKLISTS[step].items.length).fill(null);
+      });
+    }
+
+    dateInput.value = draft.dateValue || todayISO();
+    updateDateDisplay();
+
+    serialInputsWrap.innerHTML = "";
+    for (let i = 0; i < kioskCount; i++) addSerialField(i, false);
+    updateAddRemoveVisibility();
+
+    rebuildMatrix();
+    rebuildComments();
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ---------------------------------------------------------------------
+  // VALIDATION + SUBMISSION
+  // ---------------------------------------------------------------------
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function validateAll() {
+    const serialCheck = validateSerials();
+    if (!serialCheck.ok) {
+      return { ok: false, focusEl: serialCheck.firstInvalid, message: "Please complete the inspection date and serial number 1 before submitting." };
+    }
+
+    for (const k of activeKioskIndices()) {
+      for (const step of SECTION_KEYS) {
+        const list = kioskAnswers[k][step];
+        const missingIdx = list.findIndex((v) => v === null);
+        if (missingIdx !== -1) {
+          const el = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${missingIdx}"]`);
+          return {
+            ok: false,
+            focusEl: el,
+            message: `Please mark pass or fail for every check on all kiosks — ${kioskLabel(k)} still has unanswered items in ${CHECKLISTS[step].title}.`,
+          };
+        }
+      }
+    }
+
+    return { ok: true };
+  }
+
+  function buildPayload() {
+    const kiosks = activeKioskIndices().map((k, i) => {
+      const checklist = {};
+      SECTION_KEYS.forEach((step) => {
+        checklist[CHECKLISTS[step].title] = CHECKLISTS[step].items.map((label, idx) => ({
+          item: label,
+          result: kioskAnswers[k][step][idx],
+        }));
+      });
+      return {
+        position: i + 1,
+        serial: serialValues[k],
+        checklist,
+        comment: (kioskComments[k] || "").trim(),
+      };
+    });
+
+    return {
+      action: "submitInspection",
+      submittedAt: new Date().toISOString(),
+      inspectionDate: dateInput.value,
+      kiosks,
+    };
+  }
+
+  function setSubmitStatus(kind, message) {
+    const el = document.getElementById("submit-status");
+    el.classList.remove("hidden", "border-pass", "bg-pass/10", "text-pass", "border-fail", "bg-fail/10", "text-fail");
+    if (kind === "success") {
+      el.classList.add("border-pass", "bg-pass/10", "text-pass");
+    } else if (kind === "error") {
+      el.classList.add("border-fail", "bg-fail/10", "text-fail");
+    }
+    el.textContent = message;
+  }
+
+  btnSubmit.addEventListener("click", async () => {
+    const result = validateAll();
+    const errorEl = document.getElementById("submit-error");
+    if (!result.ok) {
+      errorEl.textContent = result.message;
+      errorEl.classList.remove("hidden");
+      if (result.focusEl) {
+        result.focusEl.focus();
+        result.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    errorEl.classList.add("hidden");
+
+    const payload = buildPayload();
+
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = "Submitting…";
+    setSubmitStatus("info", "Sending inspection data…");
+
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: "POST",
+        mode: "no-cors", // Apps Script web apps typically require no-cors from the browser
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+
+      setSubmitStatus("success", "Inspection submitted. Thank you.");
+      console.log("QA checklist payload:", payload);
+      clearDraft();
+
+      wizardNav.classList.add("hidden");
+      postSubmitActions.classList.remove("hidden");
+    } catch (err) {
+      setSubmitStatus("error", "Could not submit the inspection. Check your connection and try again.");
+      console.error("QA checklist submission failed:", err);
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = "Submit inspection";
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // INIT
+  // ---------------------------------------------------------------------
+  kioskAnswers = [freshAnswerSet()];
+  addSerialField(0, false);
+  updateAddRemoveVisibility();
+  rebuildMatrix();
+  rebuildComments();
+  showHome(); // only the home view visible on load; also refreshes the draft banner
+})();
+</script>
+</body>
+</html>
