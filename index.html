@@ -276,6 +276,26 @@
           <p class="mt-1 text-sm text-graphite-400">Enter the serial number for each kiosk. Format: <span class="font-mono text-graphite-200">M</span>, a hyphen, then five letters (no numbers) — e.g. <span class="font-mono text-graphite-200">M-ABCDE</span>. At least the first kiosk is required. Add more kiosks to inspect them side by side below.</p>
 
           <div class="mt-5">
+            <label for="technician-select" class="mb-1 flex items-center gap-1.5 text-sm font-medium text-graphite-200">
+              Technician <span class="text-leaf-500">*</span>
+            </label>
+            <select
+              id="technician-select"
+              class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-base text-graphite-100 transition focus:border-leaf-500"
+            >
+              <option value="">Select your name…</option>
+            </select>
+            <input
+              id="technician-other"
+              type="text"
+              placeholder="Type your name"
+              autocomplete="off"
+              class="mt-2 hidden w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-base text-graphite-100 placeholder-graphite-500 transition focus:border-leaf-500"
+            />
+            <p id="technician-error" class="mt-1 hidden text-sm text-fail">Please select or enter your name.</p>
+          </div>
+
+          <div class="mt-5">
             <label for="inspection-date" class="mb-1 flex items-center gap-1.5 text-sm font-medium text-graphite-200">
               Inspection date <span class="text-leaf-500">*</span>
             </label>
@@ -549,6 +569,63 @@
   }
 
   // ---------------------------------------------------------------------
+  // TECHNICIAN
+  // ---------------------------------------------------------------------
+  // Edit this list to match your actual team. "Other" is always added
+  // automatically so anyone not on the list can still type their name.
+  const TECHNICIANS = ["Dani", "Soma", "Márk", "Dávid", "Berci"];
+
+  const technicianSelect = document.getElementById("technician-select");
+  const technicianOther = document.getElementById("technician-other");
+  const technicianError = document.getElementById("technician-error");
+
+  TECHNICIANS.forEach((name) => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    technicianSelect.appendChild(opt);
+  });
+  const otherOpt = document.createElement("option");
+  otherOpt.value = "__other__";
+  otherOpt.textContent = "Other (type your name)";
+  technicianSelect.appendChild(otherOpt);
+
+  function getTechnicianName() {
+    if (technicianSelect.value === "__other__") return technicianOther.value.trim();
+    return technicianSelect.value;
+  }
+
+  function setTechnicianName(name) {
+    if (!name) {
+      technicianSelect.value = "";
+      technicianOther.value = "";
+      technicianOther.classList.add("hidden");
+      return;
+    }
+    if (TECHNICIANS.indexOf(name) !== -1) {
+      technicianSelect.value = name;
+      technicianOther.value = "";
+      technicianOther.classList.add("hidden");
+    } else {
+      technicianSelect.value = "__other__";
+      technicianOther.value = name;
+      technicianOther.classList.remove("hidden");
+    }
+  }
+
+  technicianSelect.addEventListener("change", () => {
+    const isOther = technicianSelect.value === "__other__";
+    technicianOther.classList.toggle("hidden", !isOther);
+    if (isOther) technicianOther.focus();
+    technicianError.classList.add("hidden");
+    saveDraft();
+  });
+  technicianOther.addEventListener("input", () => {
+    technicianError.classList.add("hidden");
+    saveDraft();
+  });
+
+  // ---------------------------------------------------------------------
   // SERIAL / DATE INPUTS
   // ---------------------------------------------------------------------
   const serialInputsWrap = document.getElementById("serial-inputs");
@@ -781,6 +858,14 @@
     let ok = true;
     let firstInvalid = null;
 
+    if (!getTechnicianName()) {
+      ok = false;
+      technicianError.classList.remove("hidden");
+      firstInvalid = firstInvalid || technicianSelect;
+    } else {
+      technicianError.classList.add("hidden");
+    }
+
     if (!dateInput.value) {
       ok = false;
       dateInput.classList.add("invalid-ring");
@@ -815,7 +900,7 @@
     if (!ok) {
       errorEl.textContent = hasDuplicate
         ? "The same serial number is entered for more than one kiosk. Each kiosk needs a unique serial number."
-        : "Inspection date and serial number 1 are required. All entered serials must match the format M-NNNNN (letters only).";
+        : "Technician, inspection date, and serial number 1 are required. All entered serials must match the format M-NNNNN (letters only).";
       errorEl.classList.remove("hidden");
     } else {
       errorEl.classList.add("hidden");
@@ -1163,6 +1248,7 @@
     if (!currentDraftId) return;
     const draft = {
       id: currentDraftId,
+      technician: getTechnicianName(),
       dateValue: dateInput.value,
       kioskCount,
       serialValues,
@@ -1233,7 +1319,8 @@
 
   function draftSummary(draft) {
     const serials = (draft.serialValues || []).filter((v) => v);
-    return serials.join(", ");
+    const serialText = serials.join(", ");
+    return draft.technician ? `${draft.technician} — ${serialText}` : serialText;
   }
 
   async function refreshDraftList() {
@@ -1291,6 +1378,7 @@
   }
 
   function applyDraft(draft) {
+    setTechnicianName(draft.technician || "");
     kioskCount = Math.min(Math.max(draft.kioskCount || 1, 1), SERIAL_COUNT);
     serialValues =
       draft.serialValues && draft.serialValues.length === SERIAL_COUNT
@@ -1375,6 +1463,7 @@
 
     return {
       action: "submitInspection",
+      technician: getTechnicianName(),
       submittedAt: new Date().toISOString(),
       inspectionDate: dateInput.value,
       kiosks,
