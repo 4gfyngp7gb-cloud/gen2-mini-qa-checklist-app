@@ -31,7 +31,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
   body { background-color: #15181A; }
@@ -340,47 +340,58 @@
   }
 
   function renderChart(filtered) {
-    const failCounts = {}; // "step:idx" -> count
-    filtered.forEach((s) => {
-      SECTION_KEYS.forEach((step) => {
-        (s.checklist[step] || []).forEach((v, idx) => {
-          if (v === "fail") {
-            const key = `${step}:${idx}`;
-            failCounts[key] = (failCounts[key] || 0) + 1;
-          }
+    if (typeof Chart === "undefined") {
+      document.getElementById("chart-card").classList.add("hidden");
+      return;
+    }
+    document.getElementById("chart-card").classList.remove("hidden");
+
+    try {
+      const failCounts = {}; // "step:idx" -> count
+      filtered.forEach((s) => {
+        SECTION_KEYS.forEach((step) => {
+          (s.checklist[step] || []).forEach((v, idx) => {
+            if (v === "fail") {
+              const key = `${step}:${idx}`;
+              failCounts[key] = (failCounts[key] || 0) + 1;
+            }
+          });
         });
       });
-    });
 
-    const entries = Object.entries(failCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
+      const entries = Object.entries(failCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
 
-    const labels = entries.map(([key]) => {
-      const [step, idx] = key.split(":");
-      return SECTIONS[step].items[Number(idx)];
-    });
-    const values = entries.map(([, count]) => count);
+      const labels = entries.map(([key]) => {
+        const [step, idx] = key.split(":");
+        return SECTIONS[step].items[Number(idx)];
+      });
+      const values = entries.map(([, count]) => count);
 
-    const ctx = document.getElementById("fails-chart").getContext("2d");
-    if (failsChart) failsChart.destroy();
-    failsChart = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [{ label: "Fails", data: values, backgroundColor: "#E03131" }],
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: "#A6ADB2" }, grid: { color: "#2C3237" }, beginAtZero: true },
-          y: { ticks: { color: "#CBCFD2", font: { size: 10 } }, grid: { display: false } },
+      const ctx = document.getElementById("fails-chart").getContext("2d");
+      if (failsChart) failsChart.destroy();
+      failsChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "Fails", data: values, backgroundColor: "#E03131" }],
         },
-      },
-    });
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#A6ADB2" }, grid: { color: "#2C3237" }, beginAtZero: true },
+            y: { ticks: { color: "#CBCFD2", font: { size: 10 } }, grid: { display: false } },
+          },
+        },
+      });
+    } catch (err) {
+      console.error("Chart rendering failed:", err);
+      document.getElementById("chart-card").classList.add("hidden");
+    }
   }
 
   function escapeHtml(str) {
@@ -451,8 +462,8 @@
       `${currentFiltered.length} of ${allSubmissions.length} inspections`;
     renderStats(currentFiltered);
     renderLeaderboard(currentFiltered);
-    renderChart(currentFiltered);
     renderTable(currentFiltered);
+    renderChart(currentFiltered);
 
     // If the current filters (e.g. typing a serial) narrow things down to
     // exactly one inspection, show its full pass/fail breakdown right away.
