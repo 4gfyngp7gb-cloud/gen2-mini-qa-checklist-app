@@ -1727,7 +1727,14 @@
   updateAddRemoveVisibility();
   rebuildMatrix();
   rebuildComments();
-  showHome(); // only the home view visible on load; also refreshes the draft banner
+  const skipToWizard = new URLSearchParams(window.location.search).get("start") === "1";
+  if (skipToWizard) {
+    currentDraftId = generateDraftId();
+    resetWizard();
+    showWizard();
+  } else {
+    showHome(); // only the home view visible on load; also refreshes the draft banner
+  }
 })();
 </script>
 </body>
