@@ -78,8 +78,8 @@
 
     <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
 
-    <!-- Stats -->
-    <div id="stats-grid" class="mb-6 hidden grid-cols-2 gap-3 sm:grid-cols-4">
+    <!-- Stats — always the full totals, unaffected by filters -->
+    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-3">
       <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
         <p class="text-xs text-graphite-400">Inspections</p>
         <p id="stat-total" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
@@ -92,29 +92,25 @@
         <p class="text-xs text-graphite-400">Total checks failed</p>
         <p id="stat-fails" class="mt-1 text-2xl font-semibold text-fail">0</p>
       </div>
-      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400">Technicians</p>
-        <p id="stat-technicians" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
-      </div>
     </div>
 
-    <!-- Technician leaderboard -->
-    <div id="leaderboard-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-graphite-200">Inspections by technician</h2>
-      <div id="leaderboard-list" class="mt-3 flex flex-wrap gap-2"></div>
+    <!-- Technicians — name + count for everyone, always the full totals -->
+    <div id="technicians-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
+      <h2 class="text-sm font-semibold text-graphite-200">Technicians</h2>
+      <div id="technicians-list" class="mt-3 flex flex-wrap gap-2"></div>
     </div>
 
-    <!-- Chart -->
+    <!-- Chart: QA volume by month — always the full totals -->
     <div id="chart-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-graphite-200">Fails by check item (top 10, filtered)</h2>
+      <h2 class="text-sm font-semibold text-graphite-200">QA processes by month</h2>
       <div class="mt-4" style="height: 260px;">
-        <canvas id="fails-chart"></canvas>
+        <canvas id="monthly-chart"></canvas>
       </div>
     </div>
 
     <!-- Filters -->
     <div id="filters-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label class="mb-1 block text-xs font-medium text-graphite-400">Technician</label>
           <select id="filter-technician" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500">
@@ -132,12 +128,6 @@
         <div>
           <label class="mb-1 block text-xs font-medium text-graphite-400">To date</label>
           <input id="filter-to" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" style="color-scheme: dark;" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-graphite-400">Check item</label>
-          <select id="filter-item" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500">
-            <option value="">Any item</option>
-          </select>
         </div>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-4">
@@ -217,7 +207,7 @@
   const SECTION_KEYS = Object.keys(SECTIONS);
 
   let allSubmissions = [];
-  let failsChart = null;
+  let monthlyChart = null;
 
   function countResults(sub) {
     let pass = 0, fail = 0;
@@ -252,19 +242,6 @@
       opt.textContent = t;
       techSelect.appendChild(opt);
     });
-
-    const itemSelect = document.getElementById("filter-item");
-    SECTION_KEYS.forEach((step) => {
-      const group = document.createElement("optgroup");
-      group.label = SECTIONS[step].title;
-      SECTIONS[step].items.forEach((label, idx) => {
-        const opt = document.createElement("option");
-        opt.value = `${step}:${idx}`;
-        opt.textContent = label;
-        group.appendChild(opt);
-      });
-      itemSelect.appendChild(group);
-    });
   }
 
   function getFilters() {
@@ -273,58 +250,57 @@
       serial: document.getElementById("filter-serial").value.trim().toUpperCase(),
       from: document.getElementById("filter-from").value,
       to: document.getElementById("filter-to").value,
-      item: document.getElementById("filter-item").value,
       onlyFails: document.getElementById("filter-only-fails").checked,
     };
   }
 
   function applyFilters(submissions, f) {
-    return submissions.filter((s) => {
-      if (f.technician && s.technician !== f.technician) return false;
-      if (f.serial && !(s.serial || "").toUpperCase().includes(f.serial)) return false;
-      if (f.from && s.inspectionDate < f.from) return false;
-      if (f.to && s.inspectionDate > f.to) return false;
-      if (f.item) {
-        const [step, idx] = f.item.split(":");
-        const val = (s.checklist[step] || [])[Number(idx)];
-        if (val !== "fail" && val !== "pass") return false; // must be answered at all
-      }
-      if (f.onlyFails) {
-        const { fail } = countResults(s);
-        if (fail === 0) return false;
-      }
-      return true;
-    });
+    return submissions
+      .filter((s) => {
+        if (f.technician && s.technician !== f.technician) return false;
+        if (f.serial && !(s.serial || "").toUpperCase().includes(f.serial)) return false;
+        if (f.from && s.inspectionDate < f.from) return false;
+        if (f.to && s.inspectionDate > f.to) return false;
+        if (f.onlyFails) {
+          const { fail } = countResults(s);
+          if (fail === 0) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.inspectionDate !== b.inspectionDate) {
+          return a.inspectionDate < b.inspectionDate ? 1 : -1; // newest date first
+        }
+        return (b.__order || 0) - (a.__order || 0); // same day: most recently added first
+      });
   }
 
-  function renderStats(filtered) {
+  function renderStats(data) {
     let totalPass = 0, totalFail = 0;
-    filtered.forEach((s) => {
+    data.forEach((s) => {
       const { pass, fail } = countResults(s);
       totalPass += pass;
       totalFail += fail;
     });
     const total = totalPass + totalFail;
     const passRate = total > 0 ? Math.round((totalPass / total) * 100) : 0;
-    const technicians = new Set(filtered.map((s) => s.technician).filter(Boolean));
 
-    document.getElementById("stat-total").textContent = filtered.length;
+    document.getElementById("stat-total").textContent = data.length;
     document.getElementById("stat-passrate").textContent = passRate + "%";
     document.getElementById("stat-fails").textContent = totalFail;
-    document.getElementById("stat-technicians").textContent = technicians.size;
   }
 
-  function renderLeaderboard(filtered) {
+  function renderTechnicians(data) {
     const counts = {};
-    filtered.forEach((s) => {
+    data.forEach((s) => {
       const name = s.technician || "(unknown)";
       counts[name] = (counts[name] || 0) + 1;
     });
     const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
-    const list = document.getElementById("leaderboard-list");
+    const list = document.getElementById("technicians-list");
     if (entries.length === 0) {
-      list.innerHTML = `<p class="text-sm text-graphite-500">No inspections match the current filters.</p>`;
+      list.innerHTML = `<p class="text-sm text-graphite-500">No inspections yet.</p>`;
       return;
     }
     list.innerHTML = entries
@@ -339,7 +315,7 @@
       .join("");
   }
 
-  function renderChart(filtered) {
+  function renderChart(data) {
     if (typeof Chart === "undefined") {
       document.getElementById("chart-card").classList.add("hidden");
       return;
@@ -347,44 +323,36 @@
     document.getElementById("chart-card").classList.remove("hidden");
 
     try {
-      const failCounts = {}; // "step:idx" -> count
-      filtered.forEach((s) => {
-        SECTION_KEYS.forEach((step) => {
-          (s.checklist[step] || []).forEach((v, idx) => {
-            if (v === "fail") {
-              const key = `${step}:${idx}`;
-              failCounts[key] = (failCounts[key] || 0) + 1;
-            }
-          });
-        });
+      const counts = {}; // "YYYY-MM" -> count
+      data.forEach((s) => {
+        const month = (s.inspectionDate || "").slice(0, 7); // "YYYY-MM"
+        if (!month) return;
+        counts[month] = (counts[month] || 0) + 1;
       });
 
-      const entries = Object.entries(failCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-
-      const labels = entries.map(([key]) => {
-        const [step, idx] = key.split(":");
-        return SECTIONS[step].items[Number(idx)];
+      const months = Object.keys(counts).sort();
+      const labels = months.map((m) => {
+        const [y, mo] = m.split("-");
+        const d = new Date(Number(y), Number(mo) - 1, 1);
+        return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
       });
-      const values = entries.map(([, count]) => count);
+      const values = months.map((m) => counts[m]);
 
-      const ctx = document.getElementById("fails-chart").getContext("2d");
-      if (failsChart) failsChart.destroy();
-      failsChart = new Chart(ctx, {
+      const ctx = document.getElementById("monthly-chart").getContext("2d");
+      if (monthlyChart) monthlyChart.destroy();
+      monthlyChart = new Chart(ctx, {
         type: "bar",
         data: {
           labels,
-          datasets: [{ label: "Fails", data: values, backgroundColor: "#E03131" }],
+          datasets: [{ label: "QA processes", data: values, backgroundColor: "#22A559" }],
         },
         options: {
-          indexAxis: "y",
           responsive: true,
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
           scales: {
-            x: { ticks: { color: "#A6ADB2" }, grid: { color: "#2C3237" }, beginAtZero: true },
-            y: { ticks: { color: "#CBCFD2", font: { size: 10 } }, grid: { display: false } },
+            x: { ticks: { color: "#CBCFD2" }, grid: { display: false } },
+            y: { ticks: { color: "#A6ADB2", precision: 0 }, grid: { color: "#2C3237" }, beginAtZero: true },
           },
         },
       });
@@ -460,16 +428,7 @@
     currentFiltered = applyFilters(allSubmissions, f);
     document.getElementById("filter-count").textContent =
       `${currentFiltered.length} of ${allSubmissions.length} inspections`;
-    renderStats(currentFiltered);
-    renderLeaderboard(currentFiltered);
     renderTable(currentFiltered);
-    renderChart(currentFiltered);
-
-    // If the current filters (e.g. typing a serial) narrow things down to
-    // exactly one inspection, show its full pass/fail breakdown right away.
-    if (currentFiltered.length === 1 && (f.serial || f.item)) {
-      openDetail(currentFiltered[0]);
-    }
   }
 
   document.getElementById("table-body").addEventListener("click", (e) => {
@@ -479,7 +438,7 @@
     openDetail(currentFiltered[idx]);
   });
 
-  ["filter-technician", "filter-serial", "filter-from", "filter-to", "filter-item"].forEach((id) => {
+  ["filter-technician", "filter-serial", "filter-from", "filter-to"].forEach((id) => {
     document.getElementById(id).addEventListener("input", refresh);
     document.getElementById(id).addEventListener("change", refresh);
   });
@@ -494,7 +453,6 @@
     document.getElementById("filter-serial").value = "";
     document.getElementById("filter-from").value = "";
     document.getElementById("filter-to").value = "";
-    document.getElementById("filter-item").value = "";
     document.getElementById("filter-only-fails").checked = false;
     refresh();
   });
@@ -503,13 +461,20 @@
     const submissions = await loadSubmissions();
     if (!submissions) return;
     allSubmissions = submissions;
+    allSubmissions.forEach((s, i) => {
+      s.__order = i;
+    });
 
     document.getElementById("load-status").classList.add("hidden");
     document.getElementById("stats-grid").classList.remove("hidden");
     document.getElementById("stats-grid").classList.add("grid");
-    document.getElementById("leaderboard-card").classList.remove("hidden");
-    document.getElementById("chart-card").classList.remove("hidden");
+    document.getElementById("technicians-card").classList.remove("hidden");
     document.getElementById("filters-card").classList.remove("hidden");
+
+    // Fixed overview — always the full totals, never affected by filters.
+    renderStats(allSubmissions);
+    renderTechnicians(allSubmissions);
+    renderChart(allSubmissions);
 
     populateFilterOptions(allSubmissions);
     refresh();
