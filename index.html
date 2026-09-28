@@ -334,7 +334,7 @@
       const labels = months.map((m) => {
         const [y, mo] = m.split("-");
         const d = new Date(Number(y), Number(mo) - 1, 1);
-        return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+        return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
       });
       const values = months.map((m) => counts[m]);
 
