@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gen2 Mini QA Dashboard</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          graphite: {
+            950: '#15181A', 900: '#1B1F22', 800: '#22262A', 700: '#2C3237',
+            600: '#3A4147', 500: '#565F66', 400: '#7C858C', 300: '#A6ADB2',
+            200: '#CBCFD2', 100: '#E8E9EA',
+          },
+          leaf: { 500: '#22A559', 600: '#1B8A49' },
+          pass: '#2F9E44',
+          fail: '#E03131',
+        },
+      },
+    },
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  body { background-color: #15181A; }
+  .grid-backdrop {
+    background-image: radial-gradient(circle, #2C3237 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  table.qa-table { border-collapse: collapse; width: 100%; }
+  table.qa-table th {
+    font-size: 0.75rem; font-weight: 600; color: #A6ADB2; text-align: left;
+    padding: 0.6rem 0.75rem; border-bottom: 1px solid #2C3237; white-space: nowrap;
+  }
+  table.qa-table td {
+    padding: 0.6rem 0.75rem; border-bottom: 1px solid #22262A; font-size: 0.8125rem;
+    vertical-align: top;
+  }
+  table.qa-table tbody tr:hover { background-color: rgba(255,255,255,0.02); }
+  .badge-pass { color: #5FCB79; background: rgba(47,158,68,0.12); }
+  .badge-fail { color: #F27878; background: rgba(224,49,49,0.12); }
+  .modal { display: none; }
+  .modal.open { display: flex; }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #3A4147; border-radius: 4px; }
+</style>
+</head>
+
+<body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
+
+  <div class="mx-auto max-w-6xl px-4 py-6 sm:py-10">
+
+    <div class="mb-4">
+      <a href="index.html" class="inline-flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
+        ← Back to Hardware Hub
+      </a>
+    </div>
+
+    <!-- Header -->
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-3 sm:mb-8">
+      <div>
+        <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
+        <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">QA Dashboard</h1>
+      </div>
+      <a href="qa-app.html?start=1" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
+        </svg>
+        Start QA process
+      </a>
+    </header>
+
+    <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
+
+    <!-- Stats — always the full totals, unaffected by filters -->
+    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
+        <p class="text-xs text-graphite-400">Inspections</p>
+        <p id="stat-total" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
+      </div>
+      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
+        <p class="text-xs text-graphite-400">Pass rate</p>
+        <p id="stat-passrate" class="mt-1 text-2xl font-semibold text-leaf-500">0%</p>
+      </div>
+      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
+        <p class="text-xs text-graphite-400">Total checks failed</p>
+        <p id="stat-fails" class="mt-1 text-2xl font-semibold text-fail">0</p>
+      </div>
+    </div>
+
+    <!-- Technicians — name + count for everyone, always the full totals -->
+    <div id="technicians-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
+      <h2 class="text-sm font-semibold text-graphite-200">Technicians</h2>
+      <div id="technicians-list" class="mt-3 flex flex-wrap gap-2"></div>
+    </div>
+
+    <!-- Chart: QA volume by month — always the full totals -->
+    <div id="chart-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
+      <h2 class="text-sm font-semibold text-graphite-200">QA processes by month</h2>
+      <div class="mt-4" style="height: 260px;">
+        <canvas id="monthly-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div id="filters-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">Technician</label>
+          <select id="filter-technician" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500">
+            <option value="">All</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">Serial</label>
+          <input id="filter-serial" type="text" placeholder="e.g. M-ABCDE" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 font-mono text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">From date</label>
+          <input id="filter-from" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" style="color-scheme: dark;" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">To date</label>
+          <input id="filter-to" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" style="color-scheme: dark;" />
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-4">
+        <label class="flex items-center gap-2 text-sm text-graphite-300">
+          <input id="filter-only-fails" type="checkbox" class="h-4 w-4 rounded border-graphite-600 bg-graphite-800 text-leaf-500 focus:ring-leaf-500" />
+          Only inspections with at least one Fail
+        </label>
+        <button id="btn-clear-filters" type="button" class="text-sm font-medium text-graphite-400 transition hover:text-leaf-500">Clear filters</button>
+        <span id="filter-count" class="ml-auto text-xs text-graphite-500"></span>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div id="table-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
+      <table class="qa-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Technician</th>
+            <th>Serial</th>
+            <th>Pass</th>
+            <th>Fail</th>
+            <th>Comment</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+
+    <p id="empty-state" class="hidden rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
+      No inspections match the current filters.
+    </p>
+
+  </div>
+
+  <!-- Detail modal -->
+  <div id="detail-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+    <div class="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p id="detail-serial" class="font-mono text-sm text-leaf-500">M-ABCDE</p>
+          <p id="detail-meta" class="text-xs text-graphite-400">Date · Technician</p>
+        </div>
+        <button id="detail-close" type="button" class="flex-shrink-0 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 hover:border-fail hover:text-fail">Close</button>
+      </div>
+      <div id="detail-body" class="mt-4 space-y-4"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
+
+  // Must match the app's CHECKLISTS exactly (section order + item order).
+  const SECTIONS = {
+    2: { title: "Functional checks", items: [
+      "Monitor brightness 100%","Kiosk app volume 50%","Red LED","Green LED","White LED",
+      "Teamviewer connection","Windows activation check","InTune enrollment check",
+      "Connector board status LED","Camera quality & correct FOV","Serial number check",
+    ]},
+    3: { title: "Base", items: ["Base damage","Sticker damage"] },
+    4: { title: "PMS", items: [
+      "PMS base fit / damage","PMS back fit / damage","PMS screen fit / damage",
+      "Cables (LEDs, Monitor, Grounding)","PMS to housing screws + washers","Camera cover fit",
+      "Camera cover screws","Glass fit / damage","Glass screws","PMS screen fixing screws",
+    ]},
+    5: { title: "Housing", items: [
+      "Housing damage","Protector fit / damage","Protector screws","Grounding wire",
+      "Camera cables","LED cables","Connector board","Fan (2x) + Jetson","Fan cables",
+      "Computer box fit / damage","Cable cover fit / damage","Connector cover fit / damage",
+      "Computer box screws + washers","Connector cover screws","ESD check",
+    ]},
+  };
+  const SECTION_KEYS = Object.keys(SECTIONS);
+
+  let allSubmissions = [];
+  let monthlyChart = null;
+
+  function countResults(sub) {
+    let pass = 0, fail = 0;
+    SECTION_KEYS.forEach((step) => {
+      (sub.checklist[step] || []).forEach((v) => {
+        if (v === "pass") pass++;
+        else if (v === "fail") fail++;
+      });
+    });
+    return { pass, fail };
+  }
+
+  async function loadSubmissions() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listSubmissions`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.submissions)) return data.submissions;
+      throw new Error((data && data.error) || "Unexpected response");
+    } catch (err) {
+      document.getElementById("load-status").textContent =
+        "Could not load submissions: " + err.message;
+      return null;
+    }
+  }
+
+  function populateFilterOptions(submissions) {
+    const techSelect = document.getElementById("filter-technician");
+    const technicians = [...new Set(submissions.map((s) => s.technician).filter(Boolean))].sort();
+    technicians.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      techSelect.appendChild(opt);
+    });
+  }
+
+  function getFilters() {
+    return {
+      technician: document.getElementById("filter-technician").value,
+      serial: document.getElementById("filter-serial").value.trim().toUpperCase(),
+      from: document.getElementById("filter-from").value,
+      to: document.getElementById("filter-to").value,
+      onlyFails: document.getElementById("filter-only-fails").checked,
+    };
+  }
+
+  function applyFilters(submissions, f) {
+    return submissions
+      .filter((s) => {
+        if (f.technician && s.technician !== f.technician) return false;
+        if (f.serial && !(s.serial || "").toUpperCase().includes(f.serial)) return false;
+        if (f.from && s.inspectionDate < f.from) return false;
+        if (f.to && s.inspectionDate > f.to) return false;
+        if (f.onlyFails) {
+          const { fail } = countResults(s);
+          if (fail === 0) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.inspectionDate !== b.inspectionDate) {
+          return a.inspectionDate < b.inspectionDate ? 1 : -1; // newest date first
+        }
+        return (b.__order || 0) - (a.__order || 0); // same day: most recently added first
+      });
+  }
+
+  function renderStats(data) {
+    let totalPass = 0, totalFail = 0;
+    data.forEach((s) => {
+      const { pass, fail } = countResults(s);
+      totalPass += pass;
+      totalFail += fail;
+    });
+    const total = totalPass + totalFail;
+    const passRate = total > 0 ? Math.round((totalPass / total) * 100) : 0;
+
+    document.getElementById("stat-total").textContent = data.length;
+    document.getElementById("stat-passrate").textContent = passRate + "%";
+    document.getElementById("stat-fails").textContent = totalFail;
+  }
+
+  function renderTechnicians(data) {
+    const counts = {};
+    data.forEach((s) => {
+      const name = s.technician || "(unknown)";
+      counts[name] = (counts[name] || 0) + 1;
+    });
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+    const list = document.getElementById("technicians-list");
+    if (entries.length === 0) {
+      list.innerHTML = `<p class="text-sm text-graphite-500">No inspections yet.</p>`;
+      return;
+    }
+    list.innerHTML = entries
+      .map(
+        ([name, count]) => `
+          <span class="flex items-center gap-1.5 rounded-full border border-graphite-600 bg-graphite-800 px-3 py-1.5 text-sm">
+            <span class="text-graphite-200">${escapeHtml(name)}</span>
+            <span class="rounded-full bg-leaf-500/15 px-2 py-0.5 text-xs font-semibold text-leaf-500">${count}</span>
+          </span>
+        `
+      )
+      .join("");
+  }
+
+  function renderChart(data) {
+    if (typeof Chart === "undefined") {
+      document.getElementById("chart-card").classList.add("hidden");
+      return;
+    }
+    document.getElementById("chart-card").classList.remove("hidden");
+
+    try {
+      const counts = {}; // "YYYY-MM" -> count
+      data.forEach((s) => {
+        const month = (s.inspectionDate || "").slice(0, 7); // "YYYY-MM"
+        if (!month) return;
+        counts[month] = (counts[month] || 0) + 1;
+      });
+
+      const months = Object.keys(counts).sort();
+      const labels = months.map((m) => {
+        const [y, mo] = m.split("-");
+        const d = new Date(Number(y), Number(mo) - 1, 1);
+        return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      });
+      const values = months.map((m) => counts[m]);
+
+      const ctx = document.getElementById("monthly-chart").getContext("2d");
+      if (monthlyChart) monthlyChart.destroy();
+      monthlyChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "QA processes", data: values, backgroundColor: "#22A559" }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#CBCFD2" }, grid: { display: false } },
+            y: { ticks: { color: "#A6ADB2", precision: 0 }, grid: { color: "#2C3237" }, beginAtZero: true },
+          },
+        },
+      });
+    } catch (err) {
+      console.error("Chart rendering failed:", err);
+      document.getElementById("chart-card").classList.add("hidden");
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : str;
+    return div.innerHTML;
+  }
+
+  function renderTable(filtered) {
+    const tbody = document.getElementById("table-body");
+    tbody.innerHTML = filtered
+      .map((s, i) => {
+        const { pass, fail } = countResults(s);
+        return `
+          <tr>
+            <td class="font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}</td>
+            <td>${escapeHtml(s.technician)}</td>
+            <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}</td>
+            <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
+            <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
+            <td class="max-w-[220px] truncate text-graphite-400">${escapeHtml(s.comment)}</td>
+            <td><button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button></td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    document.getElementById("empty-state").classList.toggle("hidden", filtered.length > 0);
+    document.getElementById("table-card").classList.toggle("hidden", filtered.length === 0);
+  }
+
+  function openDetail(sub) {
+    document.getElementById("detail-serial").textContent = sub.serial || "(no serial)";
+    document.getElementById("detail-meta").textContent = `${sub.inspectionDate} · ${sub.technician || "—"}`;
+
+    let html = "";
+    SECTION_KEYS.forEach((step) => {
+      const section = SECTIONS[step];
+      const rows = section.items
+        .map((label, idx) => {
+          const val = (sub.checklist[step] || [])[idx];
+          const badge =
+            val === "pass" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">Pass</span>' :
+            val === "fail" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-fail">Fail</span>' :
+            '<span class="text-xs text-graphite-600">—</span>';
+          return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${badge}</div>`;
+        })
+        .join("");
+      html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">${escapeHtml(section.title)}</p>${rows}</div>`;
+    });
+    if (sub.comment) {
+      html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Comment</p><p class="text-sm text-graphite-300">${escapeHtml(sub.comment)}</p></div>`;
+    }
+    document.getElementById("detail-body").innerHTML = html;
+    document.getElementById("detail-modal").classList.add("open");
+  }
+
+  document.getElementById("detail-close").addEventListener("click", () => {
+    document.getElementById("detail-modal").classList.remove("open");
+  });
+
+  let currentFiltered = [];
+
+  function refresh() {
+    const f = getFilters();
+    currentFiltered = applyFilters(allSubmissions, f);
+    document.getElementById("filter-count").textContent =
+      `${currentFiltered.length} of ${allSubmissions.length} inspections`;
+    renderTable(currentFiltered);
+  }
+
+  document.getElementById("table-body").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-detail-idx]");
+    if (!btn) return;
+    const idx = Number(btn.dataset.detailIdx);
+    openDetail(currentFiltered[idx]);
+  });
+
+  ["filter-technician", "filter-serial", "filter-from", "filter-to"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", refresh);
+    document.getElementById(id).addEventListener("change", refresh);
+  });
+  document.getElementById("filter-serial").addEventListener("input", (e) => {
+    const cursor = e.target.selectionStart;
+    e.target.value = e.target.value.toUpperCase();
+    e.target.setSelectionRange(cursor, cursor);
+  });
+  document.getElementById("filter-only-fails").addEventListener("change", refresh);
+  document.getElementById("btn-clear-filters").addEventListener("click", () => {
+    document.getElementById("filter-technician").value = "";
+    document.getElementById("filter-serial").value = "";
+    document.getElementById("filter-from").value = "";
+    document.getElementById("filter-to").value = "";
+    document.getElementById("filter-only-fails").checked = false;
+    refresh();
+  });
+
+  (async function init() {
+    const submissions = await loadSubmissions();
+    if (!submissions) return;
+    allSubmissions = submissions;
+    allSubmissions.forEach((s, i) => {
+      s.__order = i;
+    });
+
+    document.getElementById("load-status").classList.add("hidden");
+    document.getElementById("stats-grid").classList.remove("hidden");
+    document.getElementById("stats-grid").classList.add("grid");
+    document.getElementById("technicians-card").classList.remove("hidden");
+    document.getElementById("filters-card").classList.remove("hidden");
+
+    // Fixed overview — always the full totals, never affected by filters.
+    renderStats(allSubmissions);
+    renderTechnicians(allSubmissions);
+    renderChart(allSubmissions);
+
+    populateFilterOptions(allSubmissions);
+    refresh();
+  })();
+})();
+</script>
+</body>
+</html>
