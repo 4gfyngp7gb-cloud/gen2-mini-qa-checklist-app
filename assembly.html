@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assembly Tracker</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          graphite: {
+            950: '#15181A', 900: '#1B1F22', 800: '#22262A', 700: '#2C3237',
+            600: '#3A4147', 500: '#565F66', 400: '#7C858C', 300: '#A6ADB2',
+            200: '#CBCFD2', 100: '#E8E9EA',
+          },
+          leaf: { 500: '#22A559', 600: '#1B8A49' },
+          fail: '#E03131',
+        },
+      },
+    },
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  body { background-color: #15181A; }
+  .grid-backdrop {
+    background-image: radial-gradient(circle, #2C3237 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: 260px; gap: 1rem; overflow-x: auto; padding-bottom: 0.5rem; }
+  .column { display: flex; flex-direction: column; min-height: 200px; }
+  .card { transition: border-color 150ms ease; }
+  .modal { display: none; }
+  .modal.open { display: flex; }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #3A4147; border-radius: 4px; }
+</style>
+</head>
+
+<body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
+
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:py-10">
+
+    <div class="mb-4">
+      <a href="index.html" class="inline-flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
+        ← Back to Hardware Hub
+      </a>
+    </div>
+
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-3 sm:mb-8">
+      <div>
+        <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
+        <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">Assembly Tracker</h1>
+      </div>
+      <button id="btn-new-kiosk" type="button" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
+        </svg>
+        New kiosk
+      </button>
+    </header>
+
+    <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading board…</p>
+
+    <div id="board" class="board" style="display: none;"></div>
+
+  </div>
+
+  <!-- New kiosk modal -->
+  <div id="new-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+      <h3 class="text-base font-semibold text-graphite-100">Add a new kiosk</h3>
+      <div class="mt-4">
+        <label class="mb-1 block text-xs font-medium text-graphite-400">Serial number</label>
+        <input id="new-serial" type="text" placeholder="M-NNNNN" maxlength="7" autocomplete="off" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 font-mono text-base tracking-wider text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+        <p id="new-serial-error" class="mt-1 hidden text-xs text-fail">Format must be M-XXXXX (letters only).</p>
+      </div>
+      <div class="mt-4">
+        <label class="mb-1 block text-xs font-medium text-graphite-400">Note (optional)</label>
+        <input id="new-note" type="text" placeholder="e.g. rush order" autocomplete="off" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+      </div>
+      <div class="mt-5 flex gap-3">
+        <button id="new-cancel" type="button" class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 hover:border-fail hover:text-fail">Cancel</button>
+        <button id="new-confirm" type="button" class="flex-1 rounded-md bg-leaf-500 px-4 py-2.5 text-sm font-semibold text-graphite-950 hover:bg-leaf-600">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm modal -->
+  <div id="delete-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+      <h3 class="text-base font-semibold text-graphite-100">Remove this kiosk?</h3>
+      <p class="mt-2 text-sm text-graphite-400">This only removes it from the tracker board — it does not affect any submitted QA inspections.</p>
+      <div class="mt-5 flex gap-3">
+        <button id="delete-cancel" type="button" class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 hover:border-graphite-400">Cancel</button>
+        <button id="delete-confirm" type="button" class="flex-1 rounded-md bg-fail px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">Remove</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
+
+  const STAGES = [
+    "New",
+    "Jetson flash done",
+    "Kiosk assembled",
+    "VS deployed",
+    "Extrinsic calibration done",
+    "Ready to QA",
+  ];
+
+  let items = [];
+  let pendingDeleteId = null;
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : str;
+    return div.innerHTML;
+  }
+
+  function isValidSerial(value) {
+    return /^M-[A-Z]{5}$/.test(value);
+  }
+
+  function formatSerial(raw) {
+    const value = raw.toUpperCase();
+    const source = value.startsWith("M-") ? value.slice(2) : value;
+    const suffix = source.replace(/[^A-Z]/g, "").slice(0, 5);
+    if (suffix.length === 0) return "";
+    return "M-" + suffix;
+  }
+
+  async function apiGet(action) {
+    const res = await fetch(`${WEBHOOK_URL}?action=${action}`);
+    return res.json();
+  }
+
+  function apiPost(body) {
+    return fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body),
+    }).catch((err) => console.error("Request failed:", err));
+  }
+
+  function renderBoard() {
+    const board = document.getElementById("board");
+    board.innerHTML = STAGES.map((stage) => {
+      const stageItems = items.filter((it) => it.stage === stage);
+      const cards = stageItems
+        .map(
+          (it) => `
+            <div class="card mb-2 rounded-md border border-graphite-700 bg-graphite-800/80 p-3">
+              <div class="flex items-start justify-between gap-2">
+                <p class="font-mono text-sm text-leaf-500">${escapeHtml(it.serial)}</p>
+                <button type="button" data-remove-id="${it.id}" class="flex-shrink-0 text-graphite-600 transition hover:text-fail" aria-label="Remove">✕</button>
+              </div>
+              ${it.note ? `<p class="mt-1 text-xs text-graphite-400">${escapeHtml(it.note)}</p>` : ""}
+              <select data-move-id="${it.id}" class="mt-2 w-full rounded-md border border-graphite-600 bg-graphite-900 px-2 py-1.5 text-xs text-graphite-200 focus:border-leaf-500">
+                ${STAGES.map((s) => `<option value="${escapeHtml(s)}" ${s === stage ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+              </select>
+            </div>
+          `
+        )
+        .join("");
+
+      return `
+        <div class="column">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-sm font-semibold text-graphite-200">${escapeHtml(stage)}</p>
+            <span class="rounded-full bg-graphite-800 px-2 py-0.5 text-xs text-graphite-400">${stageItems.length}</span>
+          </div>
+          <div class="flex-1 rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-2">
+            ${cards || `<p class="p-2 text-xs text-graphite-600">No kiosks here</p>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("board").addEventListener("change", (e) => {
+    const select = e.target.closest("[data-move-id]");
+    if (!select) return;
+    const id = select.dataset.moveId;
+    const newStage = select.value;
+    const item = items.find((it) => it.id === id);
+    if (item) item.stage = newStage;
+    renderBoard();
+    apiPost({ action: "updateAssemblyStage", id, stage: newStage });
+  });
+
+  document.getElementById("board").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-id]");
+    if (!btn) return;
+    pendingDeleteId = btn.dataset.removeId;
+    document.getElementById("delete-modal").classList.add("open");
+  });
+
+  document.getElementById("delete-cancel").addEventListener("click", () => {
+    pendingDeleteId = null;
+    document.getElementById("delete-modal").classList.remove("open");
+  });
+  document.getElementById("delete-confirm").addEventListener("click", () => {
+    if (pendingDeleteId) {
+      items = items.filter((it) => it.id !== pendingDeleteId);
+      renderBoard();
+      apiPost({ action: "deleteAssemblyItem", id: pendingDeleteId });
+    }
+    pendingDeleteId = null;
+    document.getElementById("delete-modal").classList.remove("open");
+  });
+
+  // New kiosk modal
+  const newModal = document.getElementById("new-modal");
+  const newSerial = document.getElementById("new-serial");
+  const newNote = document.getElementById("new-note");
+  const newError = document.getElementById("new-serial-error");
+
+  document.getElementById("btn-new-kiosk").addEventListener("click", () => {
+    newSerial.value = "";
+    newNote.value = "";
+    newError.classList.add("hidden");
+    newModal.classList.add("open");
+    newSerial.focus();
+  });
+  document.getElementById("new-cancel").addEventListener("click", () => {
+    newModal.classList.remove("open");
+  });
+  newSerial.addEventListener("input", (e) => {
+    e.target.value = formatSerial(e.target.value);
+    newError.classList.add("hidden");
+  });
+  document.getElementById("new-confirm").addEventListener("click", async () => {
+    const serial = newSerial.value;
+    if (!isValidSerial(serial)) {
+      newError.classList.remove("hidden");
+      newSerial.focus();
+      return;
+    }
+    const note = newNote.value.trim();
+    newModal.classList.remove("open");
+
+    const tempId = "temp-" + Date.now();
+    items.push({ id: tempId, serial, stage: STAGES[0], note, updatedAt: new Date().toISOString() });
+    renderBoard();
+
+    const res = await apiPost({ action: "addAssemblyItem", serial, note });
+    try {
+      const data = await res.json();
+      if (data && data.ok && data.item) {
+        const idx = items.findIndex((it) => it.id === tempId);
+        if (idx !== -1) items[idx] = data.item;
+        renderBoard();
+      }
+    } catch (err) {
+      // opaque/failed response — the temp card stays as a best-effort local view
+    }
+  });
+
+  (async function init() {
+    try {
+      const data = await apiGet("listAssembly");
+      if (data && data.ok && Array.isArray(data.items)) {
+        items = data.items;
+      } else {
+        throw new Error((data && data.error) || "Unexpected response");
+      }
+    } catch (err) {
+      document.getElementById("load-status").textContent = "Could not load the board: " + err.message;
+      return;
+    }
+    document.getElementById("load-status").classList.add("hidden");
+    document.getElementById("board").style.display = "grid";
+    renderBoard();
+  })();
+})();
+</script>
+</body>
+</html>
