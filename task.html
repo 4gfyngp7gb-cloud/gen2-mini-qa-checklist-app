@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Board</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          graphite: {
+            950: '#15181A', 900: '#1B1F22', 800: '#22262A', 700: '#2C3237',
+            600: '#3A4147', 500: '#565F66', 400: '#7C858C', 300: '#A6ADB2',
+            200: '#CBCFD2', 100: '#E8E9EA',
+          },
+          leaf: { 500: '#22A559', 600: '#1B8A49' },
+          fail: '#E03131',
+        },
+      },
+    },
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  body { background-color: #15181A; }
+  .grid-backdrop {
+    background-image: radial-gradient(circle, #2C3237 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 1rem; }
+  @media (max-width: 800px) { .board { grid-auto-flow: row; grid-auto-columns: unset; } }
+  .column { display: flex; flex-direction: column; min-height: 160px; }
+  .card { transition: border-color 150ms ease; }
+  .modal { display: none; }
+  .modal.open { display: flex; }
+  input[type="date"] { color-scheme: dark; }
+</style>
+</head>
+
+<body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
+
+  <div class="mx-auto max-w-6xl px-4 py-6 sm:py-10">
+
+    <div class="mb-4">
+      <a href="index.html" class="inline-flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
+        ← Back to Hardware Hub
+      </a>
+    </div>
+
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-3 sm:mb-8">
+      <div>
+        <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
+        <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">Task Board</h1>
+      </div>
+      <button id="btn-new-task" type="button" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
+        </svg>
+        New task
+      </button>
+    </header>
+
+    <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading tasks…</p>
+
+    <div id="board" class="board" style="display: none;"></div>
+
+  </div>
+
+  <!-- New task modal -->
+  <div id="new-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-md rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+      <h3 class="text-base font-semibold text-graphite-100">New task</h3>
+
+      <div class="mt-4">
+        <label class="mb-1 block text-xs font-medium text-graphite-400">Title</label>
+        <input id="new-title" type="text" placeholder="e.g. Prepare 100x SSD package" autocomplete="off" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+        <p id="new-title-error" class="mt-1 hidden text-xs text-fail">Title is required.</p>
+      </div>
+
+      <div class="mt-4">
+        <label class="mb-1 block text-xs font-medium text-graphite-400">Description (optional)</label>
+        <textarea id="new-description" rows="3" placeholder="e.g. Ship to 123 Main St, ready by Friday" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500"></textarea>
+      </div>
+
+      <div class="mt-4 grid grid-cols-2 gap-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">Assignee</label>
+          <select id="new-assignee" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500">
+            <option value="">Unassigned</option>
+          </select>
+          <input id="new-assignee-other" type="text" placeholder="Type a name" autocomplete="off" class="mt-2 hidden w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-graphite-400">Due date</label>
+          <input id="new-due" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" />
+        </div>
+      </div>
+
+      <div class="mt-5 flex gap-3">
+        <button id="new-cancel" type="button" class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 hover:border-fail hover:text-fail">Cancel</button>
+        <button id="new-confirm" type="button" class="flex-1 rounded-md bg-leaf-500 px-4 py-2.5 text-sm font-semibold text-graphite-950 hover:bg-leaf-600">Add task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm modal -->
+  <div id="delete-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+      <h3 class="text-base font-semibold text-graphite-100">Delete this task?</h3>
+      <p class="mt-2 text-sm text-graphite-400">This can't be undone.</p>
+      <div class="mt-5 flex gap-3">
+        <button id="delete-cancel" type="button" class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 hover:border-graphite-400">Cancel</button>
+        <button id="delete-confirm" type="button" class="flex-1 rounded-md bg-fail px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">Delete</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
+
+  // Loaded from the shared "People" sheet at init — the same list the QA
+  // app's Technician field uses, kept in one place.
+  let PEOPLE = [];
+
+  const STATUSES = ["To Do", "In Progress", "Done"];
+
+  let tasks = [];
+  let pendingDeleteId = null;
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : str;
+    return div.innerHTML;
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const tz = d.getTimezoneOffset();
+    return new Date(d.getTime() - tz * 60000).toISOString().slice(0, 10);
+  }
+
+  async function apiGet(action) {
+    const res = await fetch(`${WEBHOOK_URL}?action=${action}`);
+    return res.json();
+  }
+
+  async function apiPost(body) {
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(body),
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("Request failed:", err);
+      return null;
+    }
+  }
+
+  function formatDueDate(dateStr) {
+    if (!dateStr) return "";
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const local = new Date(y, m - 1, d);
+    return local.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function isOverdue(task) {
+    if (!task.dueDate || task.status === "Done") return false;
+    return task.dueDate < todayISO();
+  }
+
+  function renderBoard() {
+    const board = document.getElementById("board");
+    board.innerHTML = STATUSES.map((status) => {
+      const columnTasks = tasks.filter((t) => t.status === status);
+      const cards = columnTasks
+        .map((t) => {
+          const overdue = isOverdue(t);
+          return `
+            <div class="card mb-2 rounded-md border border-graphite-700 bg-graphite-800/80 p-3">
+              <div class="flex items-start justify-between gap-2">
+                <p class="text-sm font-semibold text-graphite-100">${escapeHtml(t.title)}</p>
+                <button type="button" data-remove-id="${t.id}" class="flex-shrink-0 text-graphite-600 transition hover:text-fail" aria-label="Delete">✕</button>
+              </div>
+              ${t.description ? `<p class="mt-1 text-xs text-graphite-400">${escapeHtml(t.description)}</p>` : ""}
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                ${t.assignee ? `<span class="rounded-full border border-graphite-600 px-2 py-0.5 text-graphite-300">${escapeHtml(t.assignee)}</span>` : `<span class="text-graphite-600">Unassigned</span>`}
+                ${t.dueDate ? `<span class="rounded-full px-2 py-0.5 ${overdue ? "bg-fail/15 text-fail" : "border border-graphite-600 text-graphite-400"}">${overdue ? "⚠ " : ""}${escapeHtml(formatDueDate(t.dueDate))}</span>` : ""}
+              </div>
+              <select data-move-id="${t.id}" class="mt-2 w-full rounded-md border border-graphite-600 bg-graphite-900 px-2 py-1.5 text-xs text-graphite-200 focus:border-leaf-500">
+                ${STATUSES.map((s) => `<option value="${escapeHtml(s)}" ${s === status ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+              </select>
+            </div>
+          `;
+        })
+        .join("");
+
+      return `
+        <div class="column">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-sm font-semibold text-graphite-200">${escapeHtml(status)}</p>
+            <span class="rounded-full bg-graphite-800 px-2 py-0.5 text-xs text-graphite-400">${columnTasks.length}</span>
+          </div>
+          <div class="flex-1 rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-2">
+            ${cards || `<p class="p-2 text-xs text-graphite-600">No tasks here</p>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("board").addEventListener("change", (e) => {
+    const select = e.target.closest("[data-move-id]");
+    if (!select) return;
+    const id = select.dataset.moveId;
+    const newStatus = select.value;
+    const task = tasks.find((t) => t.id === id);
+    if (task) task.status = newStatus;
+    renderBoard();
+    apiPost({ action: "updateTaskStatus", id, status: newStatus });
+  });
+
+  document.getElementById("board").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-id]");
+    if (!btn) return;
+    pendingDeleteId = btn.dataset.removeId;
+    document.getElementById("delete-modal").classList.add("open");
+  });
+
+  document.getElementById("delete-cancel").addEventListener("click", () => {
+    pendingDeleteId = null;
+    document.getElementById("delete-modal").classList.remove("open");
+  });
+  document.getElementById("delete-confirm").addEventListener("click", () => {
+    if (pendingDeleteId) {
+      tasks = tasks.filter((t) => t.id !== pendingDeleteId);
+      renderBoard();
+      apiPost({ action: "deleteTask", id: pendingDeleteId });
+    }
+    pendingDeleteId = null;
+    document.getElementById("delete-modal").classList.remove("open");
+  });
+
+  // New task modal
+  const newModal = document.getElementById("new-modal");
+  const newTitle = document.getElementById("new-title");
+  const newTitleError = document.getElementById("new-title-error");
+  const newDescription = document.getElementById("new-description");
+  const newAssignee = document.getElementById("new-assignee");
+  const newAssigneeOther = document.getElementById("new-assignee-other");
+  const newDue = document.getElementById("new-due");
+
+  function populateAssigneeOptions() {
+    PEOPLE.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      newAssignee.appendChild(opt);
+    });
+    const otherOpt = document.createElement("option");
+    otherOpt.value = "__other__";
+    otherOpt.textContent = "Other (type a name)";
+    newAssignee.appendChild(otherOpt);
+  }
+
+  newAssignee.addEventListener("change", () => {
+    const isOther = newAssignee.value === "__other__";
+    newAssigneeOther.classList.toggle("hidden", !isOther);
+    if (isOther) newAssigneeOther.focus();
+  });
+
+  function getAssigneeValue() {
+    if (newAssignee.value === "__other__") return newAssigneeOther.value.trim();
+    return newAssignee.value;
+  }
+
+  document.getElementById("btn-new-task").addEventListener("click", () => {
+    newTitle.value = "";
+    newDescription.value = "";
+    newAssignee.value = "";
+    newAssigneeOther.value = "";
+    newAssigneeOther.classList.add("hidden");
+    newDue.value = "";
+    newTitleError.classList.add("hidden");
+    newModal.classList.add("open");
+    newTitle.focus();
+  });
+  document.getElementById("new-cancel").addEventListener("click", () => {
+    newModal.classList.remove("open");
+  });
+  newTitle.addEventListener("input", () => newTitleError.classList.add("hidden"));
+
+  document.getElementById("new-confirm").addEventListener("click", async () => {
+    const title = newTitle.value.trim();
+    if (!title) {
+      newTitleError.classList.remove("hidden");
+      newTitle.focus();
+      return;
+    }
+    const description = newDescription.value.trim();
+    const assignee = getAssigneeValue();
+    const dueDate = newDue.value;
+    newModal.classList.remove("open");
+
+    const tempId = "temp-" + Date.now();
+    tasks.push({ id: tempId, title, description, assignee, dueDate, status: STATUSES[0] });
+    renderBoard();
+
+    const data = await apiPost({ action: "addTask", title, description, assignee, dueDate });
+    if (data && data.ok && data.task) {
+      const idx = tasks.findIndex((t) => t.id === tempId);
+      if (idx !== -1) tasks[idx] = data.task;
+      renderBoard();
+    }
+  });
+
+  (async function init() {
+    try {
+      const [tasksData, peopleData] = await Promise.all([apiGet("listTasks"), apiGet("listPeople")]);
+      if (tasksData && tasksData.ok && Array.isArray(tasksData.tasks)) {
+        tasks = tasksData.tasks;
+      } else {
+        throw new Error((tasksData && tasksData.error) || "Unexpected response");
+      }
+      if (peopleData && peopleData.ok && Array.isArray(peopleData.people)) {
+        PEOPLE = peopleData.people;
+      }
+    } catch (err) {
+      document.getElementById("load-status").textContent = "Could not load tasks: " + err.message;
+      return;
+    }
+    populateAssigneeOptions();
+    document.getElementById("load-status").classList.add("hidden");
+    document.getElementById("board").style.display = "grid";
+    renderBoard();
+  })();
+})();
+</script>
+</body>
+</html>
