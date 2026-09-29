@@ -209,7 +209,7 @@
     <!-- ================= HOME VIEW ================= -->
     <section id="view-home" class="view active flex flex-1 flex-col justify-center">
       <div class="mb-4 flex justify-center">
-        <a href="index.html" class="flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
+        <a href="qa-dashboard.html" class="flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
           ← Back to dashboard
         </a>
       </div>
@@ -598,24 +598,41 @@
   // ---------------------------------------------------------------------
   // TECHNICIAN
   // ---------------------------------------------------------------------
-  // Edit this list to match your actual team. "Other" is always added
-  // automatically so anyone not on the list can still type their name.
-  const TECHNICIANS = ["Dani", "Soma", "Márk", "Dávid", "Berci"];
+  // Loaded from the shared "People" sheet at init — the same list the Task
+  // Board's Assignee field uses, kept in one place. "Other" is always added
+  // so anyone not on the list can still type their name.
+  let TECHNICIANS = [];
 
   const technicianSelect = document.getElementById("technician-select");
   const technicianOther = document.getElementById("technician-other");
   const technicianError = document.getElementById("technician-error");
 
-  TECHNICIANS.forEach((name) => {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    technicianSelect.appendChild(opt);
-  });
-  const otherOpt = document.createElement("option");
-  otherOpt.value = "__other__";
-  otherOpt.textContent = "Other (type your name)";
-  technicianSelect.appendChild(otherOpt);
+  function populateTechnicianOptions() {
+    TECHNICIANS.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      technicianSelect.appendChild(opt);
+    });
+    const otherOpt = document.createElement("option");
+    otherOpt.value = "__other__";
+    otherOpt.textContent = "Other (type your name)";
+    technicianSelect.appendChild(otherOpt);
+  }
+
+  async function loadPeopleList() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listPeople`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.people)) {
+        TECHNICIANS = data.people;
+      }
+    } catch (err) {
+      console.error("Could not load the shared People list:", err);
+    }
+    populateTechnicianOptions();
+  }
+  loadPeopleList();
 
   function getTechnicianName() {
     if (technicianSelect.value === "__other__") return technicianOther.value.trim();
