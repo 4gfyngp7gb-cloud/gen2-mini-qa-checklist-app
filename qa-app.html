@@ -540,7 +540,7 @@
     }
     populateTechnicianOptions();
   }
-  loadPeopleList();
+  const peopleListReady = loadPeopleList();
 
   function getTechnicianName() {
     if (technicianSelect.value === "__other__") return technicianOther.value.trim();
@@ -1584,7 +1584,7 @@
     const draftId = params.get("draftId");
 
     if (draftId) {
-      const drafts = await loadDrafts();
+      const [drafts] = await Promise.all([loadDrafts(), peopleListReady]);
       const draft = drafts.find((d) => d.id === draftId);
       if (draft) {
         currentDraftId = draft.id;
