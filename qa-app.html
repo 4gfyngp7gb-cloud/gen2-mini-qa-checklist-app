@@ -420,12 +420,14 @@
   // item label sent in the submission payload — the payload keeps plain text.
   const ITEM_HINTS = {
     "InTune enrollment check": `(look for this indicator <svg class="inline h-4 w-4 align-text-bottom" viewBox="0 0 24 24" fill="#3B5BDB" aria-hidden="true"><path d="M12 1.5l8 3v6.5c0 5.25-3.4 9.74-8 11-4.6-1.26-8-5.75-8-11V4.5l8-3z"/></svg> on the dashboard next to the serial number)`,
+    "Kiosk app - 2x Reboot kiosk": `(watch that the Jetson shuts down: no LED, no fan running)`,
   };
 
   const CHECKLISTS = {
     2: {
       title: "Functional checks",
       items: [
+        "Kiosk app - 2x Reboot kiosk",
         "Monitor brightness 100%",
         "Kiosk app volume 50%",
         "Red LED",
