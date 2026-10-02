@@ -491,7 +491,10 @@
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
             <td class="max-w-[220px] truncate text-graphite-400">${escapeHtml(s.comment)}</td>
-            <td><button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button></td>
+            <td class="whitespace-nowrap">
+              <button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button>
+              <button type="button" data-reqa-idx="${i}" class="ml-1 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Re-QA</button>
+            </td>
           </tr>
         `;
       })
@@ -542,11 +545,57 @@
   }
 
   document.getElementById("table-body").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-detail-idx]");
-    if (!btn) return;
-    const idx = Number(btn.dataset.detailIdx);
-    openDetail(currentFiltered[idx]);
+    const detailBtn = e.target.closest("[data-detail-idx]");
+    const reqaBtn = e.target.closest("[data-reqa-idx]");
+
+    if (detailBtn) {
+      openDetail(currentFiltered[Number(detailBtn.dataset.detailIdx)]);
+    } else if (reqaBtn) {
+      startReQa(currentFiltered[Number(reqaBtn.dataset.reqaIdx)]);
+    }
   });
+
+  function generateDraftId() {
+    return "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  // Re-QA: build a draft pre-filled with this submission's previous
+  // Pass/Fail answers (so only the item(s) that need re-checking have to
+  // change), save it to the shared draft store, then open the wizard on
+  // it — same mechanism as "Resume" for an unfinished inspection. The
+  // technician field stays editable in case someone else performs it,
+  // and since this becomes a new, later submission, it naturally shows
+  // as the kiosk's most recent QA result once submitted.
+  async function startReQa(sub) {
+    const SERIAL_COUNT = 5; // matches qa-app.html
+    const serialValues = new Array(SERIAL_COUNT).fill("");
+    serialValues[0] = sub.serial;
+    const kioskComments = new Array(SERIAL_COUNT).fill("");
+    kioskComments[0] = sub.comment || "";
+
+    const draft = {
+      id: generateDraftId(),
+      technician: sub.technician || "",
+      dateValue: new Date().toISOString().slice(0, 10),
+      kioskCount: 1,
+      serialValues,
+      kioskComments,
+      kioskAnswers: [sub.checklist],
+      savedAt: new Date().toISOString(),
+    };
+
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "saveDraft", draft }),
+      });
+    } catch (err) {
+      console.error("Could not start Re-QA:", err);
+      return;
+    }
+    window.location.href = `qa-app.html?draftId=${encodeURIComponent(draft.id)}`;
+  }
 
   ["filter-technician", "filter-serial", "filter-from", "filter-to"].forEach((id) => {
     document.getElementById(id).addEventListener("input", refresh);
