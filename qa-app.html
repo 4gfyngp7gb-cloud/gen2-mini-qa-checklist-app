@@ -206,57 +206,8 @@
 
   <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-6 sm:py-10">
 
-    <!-- ================= HOME VIEW ================= -->
-    <section id="view-home" class="view active flex flex-1 flex-col justify-center">
-      <div class="mb-4 flex justify-center">
-        <a href="qa-dashboard.html" class="flex items-center gap-1.5 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
-          ← Back to dashboard
-        </a>
-      </div>
-      <div class="mb-8 text-center">
-        <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
-        <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">Gen2 Mini QA Checklist</h1>
-        <p class="mt-2 text-sm text-graphite-400">Choose what you'd like to do.</p>
-      </div>
-
-      <div id="draft-list-wrap" class="mb-4 hidden space-y-2">
-        <p class="text-xs font-medium text-graphite-400">Unfinished inspections</p>
-        <div id="draft-list" class="space-y-2"></div>
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <button
-          id="btn-home-new"
-          type="button"
-          class="home-card flex flex-col items-start gap-3 rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 text-left shadow-lg shadow-black/20 hover:border-leaf-500"
-        >
-          <span class="flex h-10 w-10 items-center justify-center rounded-md bg-leaf-500/15 text-leaf-500">
-            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
-            </svg>
-          </span>
-          <span class="text-base font-semibold text-graphite-100">Start QA process</span>
-          <span class="text-sm text-graphite-400">Start a new inspection for one or more kiosks.</span>
-        </button>
-
-        <button
-          id="btn-home-sheet"
-          type="button"
-          class="home-card flex flex-col items-start gap-3 rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 text-left shadow-lg shadow-black/20 hover:border-leaf-500"
-        >
-          <span class="flex h-10 w-10 items-center justify-center rounded-md bg-leaf-500/15 text-leaf-500">
-            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h12v2H4V6zm0 4h5v4H4v-4zm7 0h5v4h-5v-4z" />
-            </svg>
-          </span>
-          <span class="text-base font-semibold text-graphite-100">QA checklist sheet</span>
-          <span class="text-sm text-graphite-400">Open the shared spreadsheet of submitted inspections.</span>
-        </button>
-      </div>
-    </section>
-
     <!-- ================= WIZARD VIEW ================= -->
-    <section id="view-wizard" class="view flex flex-1 flex-col">
+    <section id="view-wizard" class="view active flex flex-1 flex-col">
 
       <!-- Header -->
       <header class="mb-6 flex items-center justify-between sm:mb-8">
@@ -441,22 +392,13 @@
   }
 
   // ---------------------------------------------------------------------
-  // VIEW SWITCHING (Home <-> Wizard)
+  // WIZARD — this is now the page's only view. The unfinished-inspections
+  // list lives on the QA Dashboard (index.html); its "Resume" button links
+  // here with ?draftId=... (handled in INIT, below).
   // ---------------------------------------------------------------------
-  const viewHome = document.getElementById("view-home");
   const viewWizard = document.getElementById("view-wizard");
-  const draftListWrap = document.getElementById("draft-list-wrap");
-  const draftList = document.getElementById("draft-list");
-
-  function showHome() {
-    viewWizard.style.display = "none";
-    viewHome.style.display = "flex";
-    pendingDeleteId = null;
-    refreshDraftList();
-  }
 
   function showWizard() {
-    viewHome.style.display = "none";
     viewWizard.style.display = "flex";
   }
 
@@ -464,47 +406,11 @@
     window.open(SHEET_URL, "_blank", "noopener");
   }
 
-  document.getElementById("btn-home-new").addEventListener("click", () => {
-    currentDraftId = generateDraftId();
-    resetWizard();
-    showWizard();
-  });
-  document.getElementById("btn-home-sheet").addEventListener("click", openSheet);
   document.getElementById("btn-done-sheet").addEventListener("click", openSheet);
   document.getElementById("btn-done-new").addEventListener("click", () => {
     currentDraftId = generateDraftId();
     resetWizard();
     showWizard();
-  });
-
-  let pendingDeleteId = null;
-
-  draftList.addEventListener("click", (e) => {
-    const resumeBtn = e.target.closest("[data-resume-draft]");
-    const deleteBtn = e.target.closest("[data-delete-draft]");
-    const confirmBtn = e.target.closest("[data-confirm-delete]");
-    const cancelBtn = e.target.closest("[data-cancel-delete]");
-
-    if (resumeBtn) {
-      const draft = cachedDrafts.find((d) => d.id === resumeBtn.dataset.resumeDraft);
-      if (draft) {
-        currentDraftId = draft.id;
-        applyDraft(draft);
-        showWizard();
-      }
-    } else if (deleteBtn) {
-      // First click just asks for confirmation inline — no native dialog,
-      // which some mobile/embedded browsers silently block.
-      pendingDeleteId = deleteBtn.dataset.deleteDraft;
-      refreshDraftList();
-    } else if (confirmBtn) {
-      deleteDraft(confirmBtn.dataset.confirmDelete);
-      pendingDeleteId = null;
-      refreshDraftList();
-    } else if (cancelBtn) {
-      pendingDeleteId = null;
-      refreshDraftList();
-    }
   });
 
   // ---------------------------------------------------------------------
@@ -1386,7 +1292,7 @@
   const postSubmitActions = document.getElementById("post-submit-actions");
 
   btnBack.addEventListener("click", () => {
-    showHome();
+    window.location.href = "index.html";
   });
 
   // ---------------------------------------------------------------------
@@ -1429,7 +1335,6 @@
   // pick up where someone else left off. A small localStorage cache is kept
   // per-draft purely as an instant/offline fallback.
   // ---------------------------------------------------------------------
-  let cachedDrafts = []; // last list fetched from the server, used for Resume
   let saveDraftTimer = null;
 
   function localCacheKey(id) {
@@ -1495,81 +1400,6 @@
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "deleteDraft", id: currentDraftId }),
     }).catch((err) => console.error("Could not clear this draft on the server:", err));
-  }
-
-  // Remove any specific draft by id (used by the ✕ button on the home screen)
-  function deleteDraft(id) {
-    if (!id) return;
-    try {
-      localStorage.removeItem(localCacheKey(id));
-    } catch (e) {
-      // ignore
-    }
-    fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "deleteDraft", id }),
-    }).catch((err) => console.error("Could not delete this draft on the server:", err));
-  }
-
-  function draftSummary(draft) {
-    const serials = (draft.serialValues || []).filter((v) => v);
-    const serialText = serials.join(", ");
-    return draft.technician ? `${draft.technician} — ${serialText}` : serialText;
-  }
-
-  async function refreshDraftList() {
-    draftListWrap.classList.remove("hidden");
-    draftList.innerHTML = `<p class="text-xs text-graphite-500">Loading unfinished inspections…</p>`;
-
-    const drafts = (await loadDrafts())
-      .filter((d) => (d.serialValues || []).some((v) => v))
-      .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-
-    cachedDrafts = drafts;
-
-    if (drafts.length === 0) {
-      draftListWrap.classList.add("hidden");
-      draftList.innerHTML = "";
-      return;
-    }
-
-    draftListWrap.classList.remove("hidden");
-    draftList.innerHTML = drafts
-      .map((draft) => {
-        if (pendingDeleteId === draft.id) {
-          return `
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-fail/60 bg-fail/10 p-3">
-              <p class="text-sm text-graphite-100">Discard this inspection? This can't be undone.</p>
-              <div class="flex flex-shrink-0 items-center gap-2">
-                <button type="button" data-confirm-delete="${draft.id}" class="rounded-md bg-fail px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
-                <button type="button" data-cancel-delete="${draft.id}" class="rounded-md border border-graphite-600 px-3 py-1.5 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
-              </div>
-            </div>
-          `;
-        }
-        const when = draft.savedAt
-          ? new Date(draft.savedAt).toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "";
-        return `
-          <div class="flex items-center justify-between gap-3 rounded-lg border border-leaf-500/50 bg-leaf-500/10 p-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-semibold text-graphite-100">${escapeHtml(draftSummary(draft))}</p>
-              <p class="text-xs text-graphite-400">${when ? `saved ${when}` : ""}</p>
-            </div>
-            <div class="flex flex-shrink-0 items-center gap-2">
-              <button type="button" data-resume-draft="${draft.id}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</button>
-              <button type="button" data-delete-draft="${draft.id}" aria-label="Discard this inspection" class="rounded-md border border-graphite-600 px-2 py-1.5 text-xs text-graphite-400 transition hover:border-fail hover:text-fail">✕</button>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
   }
 
   function applyDraft(draft) {
@@ -1737,21 +1567,37 @@
   });
 
   // ---------------------------------------------------------------------
-  // INIT
+  // INIT — this page always opens straight into the wizard now. A specific
+  // unfinished inspection can be resumed via ?draftId=..., which the QA
+  // Dashboard's "Resume" button links to; otherwise it starts fresh.
   // ---------------------------------------------------------------------
   kioskAnswers = [freshAnswerSet()];
   addSerialField(0, false);
   updateAddRemoveVisibility();
   rebuildMatrix();
   rebuildComments();
-  const skipToWizard = new URLSearchParams(window.location.search).get("start") === "1";
-  if (skipToWizard) {
+
+  (async function init() {
+    const params = new URLSearchParams(window.location.search);
+    const draftId = params.get("draftId");
+
+    if (draftId) {
+      const drafts = await loadDrafts();
+      const draft = drafts.find((d) => d.id === draftId);
+      if (draft) {
+        currentDraftId = draft.id;
+        applyDraft(draft);
+        showWizard();
+        return;
+      }
+      // Fall through to a fresh wizard if the draft couldn't be found
+      // (e.g. it was already submitted or discarded elsewhere).
+    }
+
     currentDraftId = generateDraftId();
     resetWizard();
     showWizard();
-  } else {
-    showHome(); // only the home view visible on load; also refreshes the draft banner
-  }
+  })();
 })();
 </script>
 </body>
