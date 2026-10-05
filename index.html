@@ -188,6 +188,7 @@
         </div>
         <button id="detail-close" type="button" class="flex-shrink-0 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 hover:border-fail hover:text-fail">Close</button>
       </div>
+      <div id="detail-tabs" class="mt-4 flex gap-1 border-b border-graphite-700"></div>
       <div id="detail-body" class="mt-4 space-y-4"></div>
     </div>
   </div>
@@ -490,7 +491,7 @@
           <tr>
             <td class="font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}</td>
             <td>${escapeHtml(s.technician)}</td>
-            <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}</td>
+            <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[10px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
             <td class="max-w-[220px] truncate text-graphite-400">${escapeHtml(s.comment)}</td>
@@ -507,21 +508,120 @@
     document.getElementById("table-card").classList.toggle("hidden", filtered.length === 0);
   }
 
+  // ---------------------------------------------------------------------
+  // DETAILS / EDIT WINDOW
+  // "Details" shows every result plus the edit history. "Edit" lets someone
+  // correct a result (e.g. Fail -> Pass); the change is written to the Sheet,
+  // and who made it and when is recorded (Edit log tab + a note on the cell).
+  // ---------------------------------------------------------------------
+  let PEOPLE = [];
+  let currentDetail = null;
+  let detailTab = "details";
+  let editChanges = {};        // "step:index" -> "pass" | "fail" (only values that differ from the saved one)
+  let editShowAll = false;
+  let editorSelect = "";       // a name from PEOPLE, "__other__", or ""
+  let editorOther = "";
+  let editBusy = false;
+  let detailMessage = null;    // { kind: "success" | "error", text }
+  const EDITOR_KEY = "qaEditorName";
+
+  async function loadPeople() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listPeople`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.people)) PEOPLE = data.people;
+    } catch (err) {
+      console.error("Could not load the name list:", err);
+    }
+  }
+
+  function loadRememberedEditor() {
+    let name = "";
+    try { name = localStorage.getItem(EDITOR_KEY) || ""; } catch (e) { /* ignore */ }
+    if (!name) { editorSelect = ""; editorOther = ""; }
+    else if (PEOPLE.indexOf(name) !== -1) { editorSelect = name; editorOther = ""; }
+    else { editorSelect = "__other__"; editorOther = name; }
+  }
+  function rememberEditor(name) {
+    try { localStorage.setItem(EDITOR_KEY, name); } catch (e) { /* ignore */ }
+  }
+  function getEditorName() {
+    return editorSelect === "__other__" ? editorOther.trim() : editorSelect;
+  }
+
+  const resultWord = (v) => (v === "pass" ? "Pass" : v === "fail" ? "Fail" : "—");
+  const resultBadge = (v) =>
+    v === "pass" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">Pass</span>' :
+    v === "fail" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-fail">Fail</span>' :
+    '<span class="text-xs text-graphite-600">—</span>';
+
+  function formatWhen(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso || "";
+    return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function countFails(sub) {
+    return SECTION_KEYS.reduce((n, step) => n + (sub.checklist[step] || []).filter((v) => v === "fail").length, 0);
+  }
+
   function openDetail(sub) {
+    currentDetail = sub;
+    detailTab = "details";
+    editChanges = {};
+    editShowAll = false;
+    detailMessage = null;
+    editBusy = false;
+    loadRememberedEditor();
+    renderDetail();
+    document.getElementById("detail-modal").classList.add("open");
+  }
+
+  function renderDetail() {
+    const sub = currentDetail;
+    if (!sub) return;
     document.getElementById("detail-serial").textContent = sub.serial || "(no serial)";
     document.getElementById("detail-meta").textContent = `${sub.inspectionDate} · ${sub.technician || "—"}`;
 
-    let html = "";
+    const tab = (id, label, extra) =>
+      `<button type="button" data-detail-tab="${id}" class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition ${
+        detailTab === id ? "border-leaf-500 text-leaf-500" : "border-transparent text-graphite-400 hover:text-graphite-200"
+      }">${label}${extra || ""}</button>`;
+    const editedCount = (sub.edits || []).length;
+    document.getElementById("detail-tabs").innerHTML =
+      tab("details", "Details", editedCount ? ` <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 text-[10px] text-graphite-300">edited</span>` : "") +
+      tab("edit", "Edit");
+
+    document.getElementById("detail-body").innerHTML = detailTab === "edit" ? renderEditBody(sub) : renderDetailsBody(sub);
+  }
+
+  function messageHtml() {
+    if (!detailMessage) return "";
+    const ok = detailMessage.kind === "success";
+    return `<div class="rounded-md border px-3 py-2 text-sm ${ok ? "border-leaf-500/60 bg-leaf-500/10 text-leaf-500" : "border-fail/60 bg-fail/10 text-fail"}">${escapeHtml(detailMessage.text)}</div>`;
+  }
+
+  function renderDetailsBody(sub) {
+    let html = messageHtml();
+    // The edit history goes first: it is the key trace, and the list of checks below is long.
+    if (sub.edits && sub.edits.length) {
+      const lines = sub.edits
+        .slice()
+        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+        .map((e) => `
+          <div class="py-1.5 text-sm">
+            <p class="text-graphite-300">${escapeHtml(e.item)}: ${resultBadge(e.from)} <span class="text-graphite-500">→</span> ${resultBadge(e.to)}</p>
+            <p class="text-xs text-graphite-500">${escapeHtml(e.by)} · ${escapeHtml(formatWhen(e.at))}</p>
+          </div>`)
+        .join("");
+      html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Edit history</p>${lines}</div>`;
+    }
     SECTION_KEYS.forEach((step) => {
       const section = SECTIONS[step];
       const rows = section.items
         .map((label, idx) => {
           const val = (sub.checklist[step] || [])[idx];
-          const badge =
-            val === "pass" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">Pass</span>' :
-            val === "fail" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-fail">Fail</span>' :
-            '<span class="text-xs text-graphite-600">—</span>';
-          return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${badge}</div>`;
+          return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
         })
         .join("");
       html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">${escapeHtml(section.title)}</p>${rows}</div>`;
@@ -529,9 +629,253 @@
     if (sub.comment) {
       html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Comment</p><p class="text-sm text-graphite-300">${escapeHtml(sub.comment)}</p></div>`;
     }
-    document.getElementById("detail-body").innerHTML = html;
-    document.getElementById("detail-modal").classList.add("open");
+    return html;
   }
+
+  function segHtml(key, current, saved) {
+    const base = "px-3 py-1 text-xs font-medium transition";
+    const pass = current === "pass" ? "bg-leaf-500/20 text-leaf-500" : "text-graphite-400 hover:text-graphite-200";
+    const fail = current === "fail" ? "bg-fail/20 text-fail" : "text-graphite-400 hover:text-graphite-200";
+    return `<div class="inline-flex flex-shrink-0 overflow-hidden rounded-md border ${current !== saved ? "border-leaf-500" : "border-graphite-600"}" role="group">
+      <button type="button" data-edit-key="${key}" data-edit-val="pass" aria-pressed="${current === "pass"}" class="${base} ${pass}">Pass</button>
+      <button type="button" data-edit-key="${key}" data-edit-val="fail" aria-pressed="${current === "fail"}" class="${base} border-l border-graphite-600 ${fail}">Fail</button>
+    </div>`;
+  }
+
+  function renderEditBody(sub) {
+    if (typeof sub.row !== "number") {
+      return `<div class="rounded-md border border-fail/60 bg-fail/10 px-3 py-2 text-sm text-fail">Editing needs the latest Apps Script. Deploy the new version (Deploy → Manage deployments → New version) and reload this page.</div>`;
+    }
+    const fails = countFails(sub);
+    const showAll = editShowAll || fails === 0;
+    let html = messageHtml();
+    html += `<p class="text-sm text-graphite-400">Change a result and save. The Sheet is updated right away, and your name and the time are recorded.</p>`;
+    if (fails > 0) {
+      html += `<label class="flex items-center gap-2 text-sm text-graphite-300"><input id="edit-show-all" type="checkbox" class="h-4 w-4 accent-[#22A559]" ${showAll ? "checked" : ""} /> Show all checks (not just the failed ones)</label>`;
+    }
+
+    let shown = 0;
+    SECTION_KEYS.forEach((step) => {
+      const section = SECTIONS[step];
+      const rows = section.items
+        .map((label, idx) => {
+          const saved = (sub.checklist[step] || [])[idx];
+          if (!showAll && saved !== "fail") return "";
+          shown++;
+          const key = `${step}:${idx}`;
+          const current = editChanges[key] || saved;
+          const changed = current !== saved;
+          const control = saved === null || saved === undefined
+            ? '<span class="text-xs text-graphite-600" title="No result recorded — use Re-QA to check it">—</span>'
+            : segHtml(key, current, saved);
+          return `<div class="flex items-center justify-between gap-3 rounded py-1.5 text-sm ${changed ? "bg-graphite-800 px-2 -mx-2" : ""}">
+            <span class="text-graphite-300">${escapeHtml(label)}${changed ? `<span class="block text-[11px] text-graphite-500">was ${resultWord(saved)}</span>` : ""}</span>${control}
+          </div>`;
+        })
+        .join("");
+      if (rows) {
+        html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">${escapeHtml(section.title)}</p>${rows}</div>`;
+      }
+    });
+    if (shown === 0) html += `<p class="text-sm text-graphite-500">There are no checks to show.</p>`;
+
+    const people = PEOPLE.map((n) => `<option value="${escapeHtml(n)}" ${editorSelect === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
+    const inputCls = "w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500";
+    html += `<div class="space-y-3 border-t border-graphite-700 pt-4">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-graphite-400" for="edit-editor">Edited by</label>
+        <select id="edit-editor" class="${inputCls}">
+          <option value="">Choose your name…</option>${people}
+          <option value="__other__" ${editorSelect === "__other__" ? "selected" : ""}>Other (type a name)</option>
+        </select>
+        <input id="edit-editor-other" type="text" maxlength="60" autocomplete="off" placeholder="Type your name" value="${escapeHtml(editorOther)}" class="mt-2 ${inputCls} ${editorSelect === "__other__" ? "" : "hidden"}" />
+      </div>
+      <p class="text-xs text-graphite-500">Recorded in the Sheet's “Edit log” tab and as a note on each changed cell.</p>
+      <div class="flex items-center gap-3">
+        <button id="edit-save" type="button" class="rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-40"></button>
+        <button id="edit-undo" type="button" class="text-sm text-graphite-400 underline hover:text-graphite-200">Undo changes</button>
+      </div>
+    </div>`;
+    return html;
+  }
+
+  function updateSaveButton() {
+    const btn = document.getElementById("edit-save");
+    if (!btn) return;
+    const n = Object.keys(editChanges).length;
+    btn.textContent = editBusy ? "Saving…" : n > 0 ? `Save ${n} change${n > 1 ? "s" : ""}` : "Save changes";
+    btn.disabled = editBusy || n === 0 || !getEditorName();
+    const undo = document.getElementById("edit-undo");
+    if (undo) undo.classList.toggle("hidden", n === 0 || editBusy);
+  }
+
+  function afterDataChanged() {
+    renderStats(allSubmissions);
+    renderTechnicians(allSubmissions);
+    renderChart(allSubmissions);
+    refresh();
+  }
+
+  async function fetchSubmissionsQuietly() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listSubmissions`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.submissions)) return data.submissions;
+    } catch (err) {
+      console.error("Could not reload the submissions:", err);
+    }
+    return null;
+  }
+
+  function sameInspection(a, b) {
+    return a.row === b.row && a.serial === b.serial && a.inspectionDate === b.inspectionDate && a.technician === b.technician;
+  }
+
+  // Swap in freshly loaded data and keep the open window pointing at the same inspection.
+  function replaceAllSubmissions(fresh, previousDetail) {
+    fresh.forEach((s, i) => { s.__order = i; });
+    allSubmissions = fresh;
+    currentDetail = previousDetail ? fresh.find((s) => sameInspection(s, previousDetail)) || null : null;
+    afterDataChanged();
+  }
+
+  async function saveEdit() {
+    const sub = currentDetail;
+    if (!sub || editBusy) return;
+    const editor = getEditorName();
+    const keys = Object.keys(editChanges);
+    if (!editor || keys.length === 0) return;
+
+    const changes = keys.map((key) => {
+      const [step, idx] = key.split(":");
+      return { step, index: Number(idx), item: SECTIONS[step].items[Number(idx)], from: sub.checklist[step][Number(idx)], to: editChanges[key] };
+    });
+    const payload = {
+      action: "editSubmission",
+      row: sub.row,
+      expected: { technician: sub.technician, inspectionDate: sub.inspectionDate, serial: sub.serial },
+      editor,
+      changes,
+    };
+
+    editBusy = true;
+    detailMessage = null;
+    updateSaveButton();
+
+    let resp = null;
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+      resp = await res.json();
+    } catch (err) {
+      resp = null; // the answer could not be read — the edit may still have been saved, so check below
+    }
+
+    const previous = sub;
+
+    if (resp && resp.ok && resp.submission) {
+      Object.assign(sub, resp.submission);
+      rememberEditor(editor);
+      editChanges = {};
+      detailTab = "details";
+      detailMessage = { kind: "success", text: `Saved. The Sheet was updated and the edit was recorded under ${editor}.` };
+      afterDataChanged();
+    } else if (resp && resp.ok === false) {
+      if (resp.conflict) {
+        const fresh = await fetchSubmissionsQuietly();
+        if (fresh) replaceAllSubmissions(fresh, previous);
+        editChanges = {};
+        detailMessage = { kind: "error", text: resp.error || "This inspection changed in the meantime. The latest data has been loaded — please review and try again." };
+      } else {
+        detailMessage = { kind: "error", text: resp.error || "Could not save the changes." };
+      }
+    } else {
+      // No readable answer: look at the Sheet to find out what really happened.
+      const fresh = await fetchSubmissionsQuietly();
+      if (!fresh) {
+        detailMessage = { kind: "error", text: "Could not reach the server. The edit may or may not have been saved — reload the page before trying again." };
+      } else {
+        const match = fresh.find((s) => sameInspection(s, previous));
+        const stateOf = (c) => (match ? match.checklist[c.step][c.index] : undefined);
+        if (match && changes.every((c) => stateOf(c) === c.to)) {
+          replaceAllSubmissions(fresh, previous);
+          rememberEditor(editor);
+          editChanges = {};
+          detailTab = "details";
+          detailMessage = { kind: "success", text: `Saved. The Sheet was updated and the edit was recorded under ${editor}.` };
+        } else if (match && changes.every((c) => stateOf(c) === c.from)) {
+          detailMessage = { kind: "error", text: "Could not save the changes. Check your connection and try again." };
+        } else {
+          replaceAllSubmissions(fresh, previous);
+          editChanges = {};
+          detailMessage = { kind: "error", text: "This inspection changed in the meantime. The latest data has been loaded — please review and try again." };
+        }
+      }
+    }
+
+    editBusy = false;
+    if (!currentDetail) {
+      document.getElementById("detail-modal").classList.remove("open");
+      return;
+    }
+    renderDetail();
+    updateSaveButton();
+  }
+
+  document.getElementById("detail-tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-detail-tab]");
+    if (!btn || editBusy) return;
+    detailTab = btn.dataset.detailTab;
+    if (detailTab === "details") detailMessage = detailMessage && detailMessage.kind === "success" ? detailMessage : null;
+    else detailMessage = null;
+    renderDetail();
+    updateSaveButton();
+  });
+
+  document.getElementById("detail-body").addEventListener("click", (e) => {
+    const toggle = e.target.closest("[data-edit-key]");
+    if (toggle && !editBusy && currentDetail) {
+      const key = toggle.dataset.editKey;
+      const [step, idx] = key.split(":");
+      const saved = currentDetail.checklist[step][Number(idx)];
+      const val = toggle.dataset.editVal;
+      if (val === saved) delete editChanges[key];
+      else editChanges[key] = val;
+      renderDetail();
+      updateSaveButton();
+      return;
+    }
+    if (e.target.closest("#edit-undo") && !editBusy) {
+      editChanges = {};
+      renderDetail();
+      updateSaveButton();
+      return;
+    }
+    if (e.target.closest("#edit-save")) saveEdit();
+  });
+
+  document.getElementById("detail-body").addEventListener("change", (e) => {
+    if (e.target.id === "edit-show-all") {
+      editShowAll = e.target.checked;
+      renderDetail();
+      updateSaveButton();
+    } else if (e.target.id === "edit-editor") {
+      editorSelect = e.target.value;
+      renderDetail();
+      updateSaveButton();
+      const other = document.getElementById("edit-editor-other");
+      if (other && editorSelect === "__other__") other.focus();
+    }
+  });
+  document.getElementById("detail-body").addEventListener("input", (e) => {
+    if (e.target.id === "edit-editor-other") {
+      editorOther = e.target.value;
+      updateSaveButton();
+    }
+  });
 
   document.getElementById("detail-close").addEventListener("click", () => {
     document.getElementById("detail-modal").classList.remove("open");
@@ -621,6 +965,7 @@
 
   (async function init() {
     refreshDraftList(); // independent of submissions; don't block on it
+    loadPeople();       // names for the "Edited by" choice
 
     const submissions = await loadSubmissions();
     if (!submissions) return;
