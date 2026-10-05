@@ -1493,6 +1493,7 @@
   // FULL RESET (used when starting a fresh QA process)
   // ---------------------------------------------------------------------
   function resetWizard() {
+    restartQaTimer(0);
     kioskCount = 1;
     serialValues = new Array(SERIAL_COUNT).fill("");
     kioskAnswers = [freshAnswerSet()];
@@ -1532,6 +1533,24 @@
   // ---------------------------------------------------------------------
   let saveDraftTimer = null;
 
+  // ---------------------------------------------------------------------
+  // QA TIMER — how long the QA process takes (shown on the dashboard).
+  // It starts when the wizard is opened (Start QA process, Resume or
+  // Re-QA) and stops when the inspection is submitted. A paused and
+  // resumed QA keeps adding up: the time used so far travels with the draft.
+  // ---------------------------------------------------------------------
+  let elapsedBeforeMs = 0;          // time already used in earlier sittings of this same QA
+  let sessionStartMs = Date.now();  // when the wizard was opened this time
+
+  function currentElapsedSec() {
+    return Math.max(0, Math.round((elapsedBeforeMs + (Date.now() - sessionStartMs)) / 1000));
+  }
+
+  function restartQaTimer(previousSec) {
+    elapsedBeforeMs = Math.max(0, Number(previousSec) || 0) * 1000;
+    sessionStartMs = Date.now();
+  }
+
   function localCacheKey(id) {
     return DRAFTS_KEY + ":" + id;
   }
@@ -1550,6 +1569,7 @@
       kioskAnswers,
       kioskComments,
       savedAt: new Date().toISOString(),
+      elapsedSec: currentElapsedSec(),
     };
 
     try {
@@ -1560,6 +1580,7 @@
 
     clearTimeout(saveDraftTimer);
     saveDraftTimer = setTimeout(() => {
+      draft.elapsedSec = currentElapsedSec(); // up to date at the moment of sending
       fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -1598,6 +1619,7 @@
   }
 
   function applyDraft(draft) {
+    restartQaTimer(draft.elapsedSec);
     setTechnicianName(draft.technician || "");
     kioskCount = Math.min(Math.max(draft.kioskCount || 1, 1), SERIAL_COUNT);
     serialValues =
@@ -1722,6 +1744,7 @@
       technician: getTechnicianName(),
       submittedAt: new Date().toISOString(),
       inspectionDate: dateInput.value,
+      durationSec: currentElapsedSec(), // how long this QA session took
       kiosks,
     };
   }
