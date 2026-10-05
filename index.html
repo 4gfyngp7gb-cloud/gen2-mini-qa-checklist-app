@@ -482,6 +482,54 @@
     }
   });
 
+  // Kiosks inspected together are submitted in one go, so they sit on
+  // neighbouring sheet rows with the same technician, date and QA time. Count
+  // such runs, so the table can say "(3 kiosks)" instead of implying that each
+  // kiosk took that long. (Rows without a QA time are never grouped.)
+  function markSessions(list) {
+    list.forEach((s) => { s.sessionKiosks = 1; });
+    const byRow = list.filter((s) => typeof s.row === "number").slice().sort((a, b) => a.row - b.row);
+    let i = 0;
+    while (i < byRow.length) {
+      const first = byRow[i];
+      let j = i + 1;
+      if (first.durationSec !== null && first.durationSec !== undefined) {
+        while (
+          j < byRow.length &&
+          byRow[j].row === byRow[j - 1].row + 1 &&
+          byRow[j].technician === first.technician &&
+          byRow[j].inspectionDate === first.inspectionDate &&
+          byRow[j].durationSec === first.durationSec
+        ) j++;
+      }
+      for (let k = i; k < j; k++) byRow[k].sessionKiosks = j - i;
+      i = j;
+    }
+  }
+
+  // 754 -> "12:34", 3725 -> "1:02:05"
+  function formatDuration(totalSec) {
+    const sec = Math.max(0, Math.round(totalSec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const ss = String(sec % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  }
+
+  // The QA time next to the date. It belongs to the whole QA session, so when
+  // several kiosks were inspected together it says so instead of implying
+  // that each one took that long. Older inspections have no time recorded.
+  function durationHtml(s) {
+    if (s.durationSec === null || s.durationSec === undefined) return "";
+    const together = s.sessionKiosks > 1;
+    const sec = Math.round(s.durationSec);
+    const title = `QA took ${Math.floor(sec / 60)} min ${sec % 60} s` + (together ? ` — for all ${s.sessionKiosks} kiosks together` : "");
+    return `<span class="ml-2 inline-flex items-center gap-1 align-middle font-sans text-xs text-graphite-400" title="${escapeHtml(title)}">
+      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+      <span class="font-mono">${formatDuration(sec)}</span>${together ? `<span class="text-graphite-500">(${s.sessionKiosks} kiosks)</span>` : ""}
+    </span>`;
+  }
+
   function renderTable(filtered) {
     const tbody = document.getElementById("table-body");
     tbody.innerHTML = filtered
@@ -489,7 +537,7 @@
         const { pass, fail } = countResults(s);
         return `
           <tr>
-            <td class="font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}</td>
+            <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
             <td>${escapeHtml(s.technician)}</td>
             <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[10px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
@@ -710,6 +758,7 @@
   }
 
   function afterDataChanged() {
+    markSessions(allSubmissions);
     renderStats(allSubmissions);
     renderTechnicians(allSubmissions);
     renderChart(allSubmissions);
@@ -973,6 +1022,7 @@
     allSubmissions.forEach((s, i) => {
       s.__order = i;
     });
+    markSessions(allSubmissions);
 
     document.getElementById("load-status").classList.add("hidden");
     document.getElementById("stats-grid").classList.remove("hidden");
