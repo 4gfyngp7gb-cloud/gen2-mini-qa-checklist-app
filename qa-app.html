@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+  // Apply the saved theme before anything is drawn, so the page never flashes the wrong one.
+  (function () { try { var t = localStorage.getItem("qaTheme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {} })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gen2 Mini QA Checklist</title>
 
@@ -17,23 +21,19 @@
         },
         colors: {
           graphite: {
-            950: '#15181A',
-            900: '#1B1F22',
-            800: '#22262A',
-            700: '#2C3237',
-            600: '#3A4147',
-            500: '#565F66',
-            400: '#7C858C',
-            300: '#A6ADB2',
-            200: '#CBCFD2',
-            100: '#E8E9EA',
+            950: 'rgb(var(--g-950) / <alpha-value>)', 900: 'rgb(var(--g-900) / <alpha-value>)',
+            800: 'rgb(var(--g-800) / <alpha-value>)', 700: 'rgb(var(--g-700) / <alpha-value>)',
+            600: 'rgb(var(--g-600) / <alpha-value>)', 500: 'rgb(var(--g-500) / <alpha-value>)',
+            400: 'rgb(var(--g-400) / <alpha-value>)', 300: 'rgb(var(--g-300) / <alpha-value>)',
+            200: 'rgb(var(--g-200) / <alpha-value>)', 100: 'rgb(var(--g-100) / <alpha-value>)',
           },
-          leaf: {
-            500: '#22A559',
-            600: '#1B8A49',
-          },
-          pass: '#2F9E44',
-          fail: '#E03131',
+          leaf: { 500: 'rgb(var(--leaf-500) / <alpha-value>)', 600: 'rgb(var(--leaf-600) / <alpha-value>)' },
+          pass: 'rgb(var(--pass) / <alpha-value>)',
+          fail: 'rgb(var(--fail) / <alpha-value>)',
+          failtext: 'rgb(var(--fail-text) / <alpha-value>)',
+        },
+        fontSize: {
+          xs: ['0.8125rem', { lineHeight: '1.2rem' }], // 13px instead of 12px: nothing is set smaller than this
         },
       },
     },
@@ -44,12 +44,40 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 
 <style>
-  body { background-color: #15181A; }
-
-  /* subtle blueprint dot grid on the page background */
+  /* ---------- Colour themes: dark (default) and light ----------
+     Every colour in the app comes from these variables, so a theme is just a
+     different set of numbers. Greys 500/400 are the muted/secondary text colours
+     and were raised so they reach a readable contrast (>= 4.5:1). */
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --g-950: 21 24 26;   --g-900: 27 31 34;   --g-800: 34 38 42;   --g-700: 44 50 55;   --g-600: 58 65 71;
+    --g-500: 143 151 158; --g-400: 163 171 177; --g-300: 189 195 200; --g-200: 214 218 221; --g-100: 238 239 240;
+    --leaf-500: 34 165 89;  --leaf-600: 27 138 73;
+    --pass: 47 158 68;      --fail: 214 40 40;
+    --pass-text: 95 203 121; --fail-text: 242 120 120;
+    --dots: 34 38 42;  --line: 34 38 42;  --hover: 255 255 255;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --g-950: 243 245 246; --g-900: 255 255 255; --g-800: 240 242 244; --g-700: 221 226 229; --g-600: 197 204 209;
+    --g-500: 95 107 115;  --g-400: 74 85 93;    --g-300: 53 64 73;    --g-200: 31 41 47;    --g-100: 17 23 26;
+    --leaf-500: 18 114 54;  --leaf-600: 14 92 43;
+    --pass: 18 114 54;      --fail: 198 40 40;
+    --pass-text: 18 114 54;  --fail-text: 185 28 28;
+    --dots: 229 233 236;  --line: 230 234 237;  --hover: 0 0 0;
+  }
+  body { background-color: rgb(var(--g-950)); }
   .grid-backdrop {
-    background-image: radial-gradient(circle, #2C3237 1px, transparent 1px);
+    background-image: radial-gradient(circle, rgb(var(--dots)) 1px, transparent 1px);
     background-size: 22px 22px;
+  }
+
+  /* The page is as wide as the checklist tables need: narrow (42rem) for one kiosk,
+     wider as kiosk columns (and Round 2) appear, so nothing has to be scrolled
+     sideways. It never exceeds the window; there the tables scroll as before. */
+  #page {
+    max-width: min(var(--page-w, 42rem), 100%);
+    transition: max-width 180ms ease;
   }
 
   .view { display: none; }
@@ -57,29 +85,28 @@
 
   input:focus-visible,
   button:focus-visible {
-    outline: 2px solid #22A559;
+    outline: 2px solid rgb(var(--leaf-500));
     outline-offset: 2px;
   }
 
   .pf-btn[data-active="true"][data-value="pass"] {
-    background-color: rgba(47,158,68,0.15);
-    border-color: #2F9E44;
-    color: #5FCB79;
+    background-color: rgb(var(--pass) / 0.16);
+    border-color: rgb(var(--pass));
+    color: rgb(var(--pass-text));
   }
   .pf-btn[data-active="true"][data-value="fail"] {
-    background-color: rgba(224,49,49,0.15);
-    border-color: #E03131;
-    color: #F27878;
+    background-color: rgb(var(--fail) / 0.16);
+    border-color: rgb(var(--fail));
+    color: rgb(var(--fail-text));
   }
 
-  .invalid-ring { box-shadow: 0 0 0 1px #E03131; border-color: #E03131 !important; }
+  .invalid-ring { box-shadow: 0 0 0 1px rgb(var(--fail)); border-color: rgb(var(--fail)) !important; }
 
   input[type="date"] {
     width: 100%;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    color-scheme: dark;
   }
   input[type="date"]::-webkit-datetime-edit,
   input[type="date"]::-webkit-datetime-edit-fields-wrapper {
@@ -110,22 +137,23 @@
   }
   .qa-row:focus-visible,
   .qa-row:focus {
-    border-color: #E8E9EA;
+    border-color: rgb(var(--g-100));
     outline: none;
   }
   .qa-row[data-selected="pass"] {
-    border-color: #2F9E44;
-    background-color: rgba(47, 158, 68, 0.08);
+    border-color: rgb(var(--pass));
+    background-color: rgb(var(--pass) / 0.09);
   }
   .qa-row[data-selected="fail"] {
-    border-color: #E03131;
-    background-color: rgba(224, 49, 49, 0.08);
+    border-color: rgb(var(--fail));
+    background-color: rgb(var(--fail) / 0.09);
   }
 
   .home-card { transition: border-color 150ms ease, transform 150ms ease; }
 
   /* Display-only copy of a kiosk-dashboard action button (icon + name), shown
-     under a check's label so testers know which button to press. */
+     under a check's label so testers know which button to press. It is a picture
+     of the kiosk's own (dark) button, so it keeps the same look in both themes. */
   .dash-btn {
     display: inline-flex;
     align-items: center;
@@ -150,7 +178,7 @@
     position: sticky;
     bottom: 0;
     z-index: 20;
-    background: linear-gradient(to top, #15181A 65%, rgba(21, 24, 26, 0));
+    background: linear-gradient(to top, rgb(var(--g-950)) 65%, rgb(var(--g-950) / 0));
     padding-top: 1.25rem;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
@@ -165,42 +193,42 @@
     right: 0;
     bottom: 0;
     width: 28px;
-    background: linear-gradient(to right, transparent, rgba(27, 31, 34, 0.95));
+    background: linear-gradient(to right, transparent, rgb(var(--g-900) / 0.95));
     pointer-events: none;
   }
   .matrix-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
   .sticky-col {
     position: sticky;
     left: 0;
-    background-color: #1B1F22;
+    background-color: rgb(var(--g-900));
     z-index: 5;
   }
   .matrix-table thead th {
     font-weight: 600;
-    font-size: 0.75rem;
-    color: #A6ADB2;
+    font-size: 0.8125rem;
+    color: rgb(var(--g-300));
     text-align: center;
     padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid #2C3237;
+    border-bottom: 1px solid rgb(var(--g-700));
     white-space: nowrap;
-    width: 84px;
+    width: 96px; /* one Pass/Fail pair (80px) + the cell's side padding (16px) */
   }
-  .matrix-table thead th.sticky-col { text-align: left; color: #CBCFD2; }
+  .matrix-table thead th.sticky-col { text-align: left; color: rgb(var(--g-200)); }
   .matrix-table tbody td {
     padding: 0.35rem 0.5rem;
-    border-bottom: 1px solid #22262A;
+    border-bottom: 1px solid rgb(var(--line));
     text-align: center;
     vertical-align: middle;
   }
   .matrix-table tbody td.sticky-col {
     text-align: left;
-    color: #CBCFD2;
-    font-size: 0.8125rem;
+    color: rgb(var(--g-200));
+    font-size: 0.875rem;
     padding: 0.5rem 0.75rem;
   }
   .matrix-table th.sticky-col,
   .matrix-table td.sticky-col {
-    width: 200px;
+    width: 220px;
   }
   .matrix-table tbody tr:last-child td { border-bottom: none; }
 
@@ -216,6 +244,7 @@
     font-weight: 700;
   }
 
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
   }
@@ -224,7 +253,7 @@
 
 <body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
 
-  <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-6 sm:py-10">
+  <div id="page" class="mx-auto flex min-h-screen flex-col px-4 py-6 sm:py-10">
 
     <!-- ================= WIZARD VIEW ================= -->
     <section id="view-wizard" class="view active flex flex-1 flex-col">
@@ -238,7 +267,7 @@
         <button
           id="btn-back"
           type="button"
-          class="flex-shrink-0 rounded-md border border-graphite-600 px-3 py-1.5 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500"
+          class="flex-shrink-0 rounded-md border border-graphite-600 px-3 py-2 text-sm font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500"
         >
           Home
         </button>
@@ -247,7 +276,7 @@
       <main class="flex-1 space-y-5">
 
         <!-- KIOSK INFO -->
-        <section class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6">
+        <section class="mx-auto w-full max-w-2xl rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6">
           <h2 class="text-lg font-semibold text-graphite-100">Kiosk serial numbers</h2>
           <p class="mt-1 text-sm text-graphite-400">Enter the serial number for each kiosk. Format: <span class="font-mono text-graphite-200">M</span>, a hyphen, then five letters (no numbers) — e.g. <span class="font-mono text-graphite-200">M-ABCDE</span>. At least the first kiosk is required. Add more kiosks to inspect them side by side below.</p>
 
@@ -268,7 +297,7 @@
               autocomplete="off"
               class="mt-2 hidden w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2.5 text-base text-graphite-100 placeholder-graphite-500 transition focus:border-leaf-500"
             />
-            <p id="technician-error" class="mt-1 hidden text-sm text-fail">Please select or enter your name.</p>
+            <p id="technician-error" class="mt-1 hidden text-sm text-failtext">Please select or enter your name.</p>
           </div>
 
           <div class="mt-5">
@@ -311,7 +340,7 @@
             <button
               id="btn-remove-serial"
               type="button"
-              class="hidden flex items-center gap-1.5 text-sm font-medium text-graphite-400 transition hover:text-fail"
+              class="hidden flex items-center gap-1.5 text-sm font-medium text-graphite-400 transition hover:text-failtext"
             >
               <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path d="M4 9a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z" />
@@ -320,7 +349,7 @@
             </button>
           </div>
 
-          <p id="serial-error" class="mt-3 hidden text-sm text-fail"></p>
+          <p id="serial-error" class="mt-3 hidden text-sm text-failtext"></p>
         </section>
 
         <!-- CHECKLIST MATRIX (built by JS: one column per active kiosk) -->
@@ -333,7 +362,7 @@
           <div id="comments-grid" class="mt-4 grid gap-4 sm:grid-cols-2"></div>
         </section>
 
-        <p id="submit-error" class="hidden text-sm text-fail"></p>
+        <p id="submit-error" class="hidden text-sm text-failtext"></p>
         <div id="submit-status" class="hidden rounded-md border p-3 text-sm"></div>
 
         <!-- Post-submission actions -->
@@ -356,7 +385,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-07.3</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.6</p>
 
       <!-- Screw confirmation modal (PMS / Housing) -->
       <div id="screw-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4">
@@ -573,6 +602,31 @@
   // Round 2 shows as a second Pass/Fail pair next to Round 1, so once it is
   // unlocked the kiosk columns of that table need room for two pairs.
   const ROUND2_COL_WIDTH = "184px";
+
+  // Column widths (they match the CSS: .matrix-table / .sticky-col) and what surrounds
+  // the table: card padding (2 x 24) + page padding (2 x 16) + borders.
+  const LABEL_COL_PX = 220;
+  const KIOSK_COL_PX = 96;
+  const ROUND2_COL_PX = 184;
+  const PAGE_MIN_PX = 672; // 42rem, the normal narrow form
+  const PAGE_PADDING_PX = 2 * 24 + 2 * 16 + 4;
+  const pageEl = document.getElementById("page");
+
+  // How wide the page has to be for the widest table (Functional checks, with
+  // Round 2 beside Round 1 once it is open) to fit without sideways scrolling.
+  function pageWidthFor(kioskCount, round2Open) {
+    const perKiosk = round2Open ? ROUND2_COL_PX : KIOSK_COL_PX;
+    const tableWidth = LABEL_COL_PX + kioskCount * Math.max(perKiosk, KIOSK_COL_PX);
+    return Math.max(PAGE_MIN_PX, tableWidth + PAGE_PADDING_PX);
+  }
+
+  function updatePageWidth() {
+    pageEl.style.setProperty("--page-w", pageWidthFor(activeKioskIndices().length, round2Revealed) + "px");
+  }
+  // once the page has finished growing or shrinking, check which tables still overflow
+  pageEl.addEventListener("transitionend", (e) => {
+    if (e.propertyName === "max-width") document.querySelectorAll(".matrix-wrap").forEach(updateScrollFade);
+  });
   let round2Revealed = false;
 
   function isRound1Complete() {
@@ -604,6 +658,7 @@
     matrixRoot.querySelectorAll("th[data-round2-col]").forEach((th) => {
       th.style.width = round2Revealed ? ROUND2_COL_WIDTH : "";
     });
+    updatePageWidth(); // Round 2 columns just appeared/disappeared
     document.querySelectorAll(".matrix-wrap").forEach(updateScrollFade);
   }
 
@@ -1256,7 +1311,7 @@
     });
     const remaining = total - pass - fail;
     el.textContent = `${pass} Pass · ${fail} Fail` + (remaining > 0 ? ` · ${remaining} remaining` : "");
-    el.classList.toggle("text-fail", fail > 0);
+    el.classList.toggle("text-failtext", fail > 0);
   }
 
   // One Pass/Fail pair (a focusable, keyboard-navigable cell).
@@ -1278,6 +1333,7 @@
 
     const activeKiosks = activeKioskIndices();
     if (activeKiosks.length === 0) {
+      updatePageWidth();
       matrixRoot.innerHTML = `
         <p class="rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
           Enter a serial number above to start the checklist.
@@ -1287,6 +1343,7 @@
     }
 
     refreshRound2Latch();
+    updatePageWidth(); // kiosk columns were added/removed, and Round 2 may already be open (resumed draft)
 
     SECTION_KEYS.forEach((step) => {
       const section = CHECKLISTS[step];
@@ -1298,10 +1355,10 @@
       if (section.warning) {
         warningHtml = `
           <div class="mt-3 flex items-start gap-3 rounded-md border border-fail bg-fail/10 p-3">
-            <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-fail" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-failtext" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.514 2.63H3.72c-1.345 0-2.187-1.463-1.514-2.63L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
             </svg>
-            <p class="text-sm font-medium text-fail">${section.warning}</p>
+            <p class="text-sm font-medium text-failtext">${section.warning}</p>
           </div>
         `;
       }
@@ -1311,7 +1368,7 @@
         const r2Attr = step === ROUND_STEP
           ? ` data-round2-col${round2Revealed ? ` style="width:${ROUND2_COL_WIDTH}"` : ""}`
           : "";
-        headerCols += `<th class="min-w-[84px]" data-col-header="${k}"${r2Attr}>${kioskLabel(k)}</th>`;
+        headerCols += `<th class="min-w-[96px]" data-col-header="${k}"${r2Attr}>${kioskLabel(k)}</th>`;
       });
 
       let bodyRows = "";
@@ -1340,7 +1397,7 @@
             cols += `<td>${pfCellHtml(k, step, idx)}</td>`;
             return;
           }
-          const cap = "mb-0.5 block whitespace-nowrap text-center text-[10px] font-medium leading-none text-graphite-500";
+          const cap = "mb-0.5 block whitespace-nowrap text-center text-[12px] font-medium leading-none text-graphite-500";
           cols += `
             <td>
               <div class="flex items-start justify-center gap-2">
@@ -1888,11 +1945,11 @@
 
   function setSubmitStatus(kind, message) {
     const el = document.getElementById("submit-status");
-    el.classList.remove("hidden", "border-pass", "bg-pass/10", "text-pass", "border-fail", "bg-fail/10", "text-fail");
+    el.classList.remove("hidden", "border-pass", "bg-pass/10", "text-pass", "border-fail", "bg-fail/10", "text-failtext");
     if (kind === "success") {
       el.classList.add("border-pass", "bg-pass/10", "text-pass");
     } else if (kind === "error") {
-      el.classList.add("border-fail", "bg-fail/10", "text-fail");
+      el.classList.add("border-fail", "bg-fail/10", "text-failtext");
     }
     el.textContent = message;
   }
@@ -1977,6 +2034,16 @@
     showWizard();
   })();
 })();
+</script>
+<script>
+  // The theme (dark or light) is chosen on the dashboard only. This page just follows it:
+  // the saved choice is applied before anything is drawn (script in the <head>), and if the
+  // dashboard is changed while this page is open in another tab, it switches along.
+  window.addEventListener("storage", function (e) {
+    if (e.key === "qaTheme" && (e.newValue === "light" || e.newValue === "dark")) {
+      document.documentElement.setAttribute("data-theme", e.newValue);
+    }
+  });
 </script>
 </body>
 </html>
