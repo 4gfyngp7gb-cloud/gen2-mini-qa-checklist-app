@@ -85,6 +85,19 @@
   .badge-fail { color: rgb(var(--fail-text)); background: rgb(var(--fail) / 0.14); }
   .modal { display: none; }
   .modal.open { display: flex; }
+  /* rows of inspections that are still being done ("currently in progress") */
+  table.qa-table tbody tr.in-progress td:first-child { box-shadow: inset 3px 0 0 rgb(var(--leaf-500) / 0.65); }
+  .progress-dot {
+    display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px;
+    background: rgb(var(--leaf-500)); animation: qa-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes qa-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  /* a row that has just turned from "in progress" into a finished one */
+  @keyframes qa-flash { from { background-color: rgb(var(--leaf-500) / 0.24); } to { background-color: transparent; } }
+  table.qa-table tbody tr.just-finished td { animation: qa-flash 4s ease-out 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .progress-dot, table.qa-table tbody tr.just-finished td { animation: none; }
+  }
   ::-webkit-scrollbar { height: 8px; width: 8px; }
   ::-webkit-scrollbar-thumb { background: rgb(var(--g-600)); border-radius: 4px; }
   /* show the icon of the theme you would switch TO */
@@ -123,12 +136,6 @@
         </a>
       </div>
     </header>
-
-    <!-- Unfinished inspections -->
-    <div id="draft-list-wrap" class="mb-6 hidden space-y-2">
-      <p class="text-xs font-medium text-graphite-400">Unfinished inspections</p>
-      <div id="draft-list" class="space-y-2"></div>
-    </div>
 
     <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
 
@@ -220,7 +227,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.4</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.5</p>
   </div>
 
   <!-- Detail modal -->
@@ -296,15 +303,16 @@
     }
   }
 
-  function populateFilterOptions(submissions) {
+  // The technician list covers everyone with a finished QA AND everyone with one in progress,
+  // and is kept up to date as the data changes (a new technician can appear at any time).
+  function populateFilterOptions() {
     const techSelect = document.getElementById("filter-technician");
-    const technicians = [...new Set(submissions.map((s) => s.technician).filter(Boolean))].sort();
-    technicians.forEach((t) => {
-      const opt = document.createElement("option");
-      opt.value = t;
-      opt.textContent = t;
-      techSelect.appendChild(opt);
-    });
+    const wanted = [...new Set([...allSubmissions.map((s) => s.technician), ...lastDrafts.map((d) => d.technician)].filter(Boolean))].sort();
+    const have = Array.from(techSelect.options).map((o) => o.value).filter(Boolean);
+    if (wanted.join("\u0001") === have.join("\u0001")) return; // nothing new
+    const selected = techSelect.value;
+    techSelect.innerHTML = '<option value="">All</option>' + wanted.map((t) => `<option value="${String(t).replace(/"/g, "&quot;")}">${escapeHtml(t)}</option>`).join("");
+    if (wanted.includes(selected)) techSelect.value = selected;
   }
 
   function getFilters() {
@@ -358,7 +366,11 @@
         if (a.inspectionDate !== b.inspectionDate) {
           return a.inspectionDate < b.inspectionDate ? 1 : -1; // newest date first
         }
-        return (b.__order || 0) - (a.__order || 0); // same day: most recently added first
+        // same day: the most recent submission first — but the kiosks of ONE submission stay in
+        // the order they were entered (the same order the in-progress rows had)
+        const startOf = (s) => (typeof s.__sessionStart === "number" ? s.__sessionStart : s.__order || 0);
+        if (startOf(a) !== startOf(b)) return startOf(b) - startOf(a);
+        return (a.row !== undefined ? a.row : a.__order || 0) - (b.row !== undefined ? b.row : b.__order || 0);
       });
   }
 
@@ -465,16 +477,15 @@
   }
 
   // ---------------------------------------------------------------------
-  // UNFINISHED INSPECTIONS (drafts) — started in the wizard but not yet
-  // submitted. "Resume" opens the wizard straight into that draft.
+  // UNFINISHED INSPECTIONS (drafts) — started in the wizard but not yet submitted.
+  // They are shown as "currently in progress" rows at the top of the table, one row
+  // per kiosk. Once the inspection is submitted, the row turns into the usual one.
   // ---------------------------------------------------------------------
-  let pendingDeleteDraftId = null;
-
-  function draftSummary(draft) {
-    const serials = (draft.serialValues || []).filter((v) => v);
-    const serialText = serials.join(", ");
-    return draft.technician ? `${draft.technician} — ${serialText}` : serialText;
-  }
+  let pendingDelete = null;       // { id, serial }: the row whose "discard?" question is open
+  let dataLoaded = false;         // the first load of the submissions has finished
+  let lastDrafts = [];            // the unfinished inspections as last fetched from the server
+  let currentProgress = [];       // the in-progress rows currently on screen (after the filters)
+  const justFinished = new Set(); // serials whose row has just turned from "in progress" into a finished one
 
   async function loadDrafts() {
     try {
@@ -484,7 +495,7 @@
     } catch (err) {
       console.error("Could not load drafts:", err);
     }
-    return [];
+    return null; // null = "could not tell" (an empty list is a real answer: nothing in progress)
   }
 
   function deleteDraft(id) {
@@ -495,97 +506,93 @@
     }).catch((err) => console.error("Could not delete this draft:", err));
   }
 
-  let lastDrafts = []; // the unfinished inspections as last fetched from the server
-
-  // True when every kiosk of this draft is already in the list for the same
-  // technician and date — so it is most likely the leftover of a QA that was
-  // finished. Only used for a hint; nothing is ever hidden or deleted because of it.
-  function looksAlreadySubmitted(draft) {
-    const serials = (draft.serialValues || []).filter(Boolean);
-    if (serials.length === 0 || !draft.dateValue) return false;
-    return serials.every((serial) =>
-      allSubmissions.some((s) => s.serial === serial && s.technician === (draft.technician || "") && s.inspectionDate === draft.dateValue)
-    );
+  // True when this kiosk is already in the list for the same technician and date — so the
+  // draft is most likely the leftover of a QA that was finished. Only a hint: nothing is
+  // ever hidden or deleted because of it.
+  function looksAlreadySubmitted(draft, serial) {
+    if (!serial || !draft.dateValue) return false;
+    return allSubmissions.some((s) => s.serial === serial && s.technician === (draft.technician || "") && s.inspectionDate === draft.dateValue);
   }
 
   async function refreshDraftList() {
-    lastDrafts = (await loadDrafts())
+    const drafts = await loadDrafts();
+    if (drafts === null) return; // couldn't reach the server: keep what is on screen
+    lastDrafts = drafts
       .filter((d) => (d.serialValues || []).some((v) => v))
       .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-    renderDraftList();
+    if (dataLoaded) refresh();
   }
 
-  function renderDraftList() {
-    const wrap = document.getElementById("draft-list-wrap");
-    const list = document.getElementById("draft-list");
-    const drafts = lastDrafts;
-
-    if (drafts.length === 0) {
-      wrap.classList.add("hidden");
-      list.innerHTML = "";
-      return;
-    }
-
-    wrap.classList.remove("hidden");
-    list.innerHTML = drafts
-      .map((draft) => {
-        if (pendingDeleteDraftId === draft.id) {
-          return `
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-fail/60 bg-fail/10 p-3">
-              <p class="text-sm text-graphite-100">Discard this inspection? This can't be undone.</p>
-              <div class="flex flex-shrink-0 items-center gap-2">
-                <button type="button" data-confirm-delete-draft="${draft.id}" class="rounded-md bg-fail px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
-                <button type="button" data-cancel-delete-draft="1" class="rounded-md border border-graphite-600 px-3 py-1.5 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
-              </div>
-            </div>
-          `;
-        }
-        const when = draft.savedAt
-          ? new Date(draft.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-          : "";
-        return `
-          <div class="flex items-center justify-between gap-3 rounded-lg border border-leaf-500/50 bg-leaf-500/10 p-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-semibold text-graphite-100">${escapeHtml(draftSummary(draft))}</p>
-              <p class="text-xs text-graphite-400">${when ? `saved ${when}` : ""}</p>
-              ${looksAlreadySubmitted(draft) ? `<p class="mt-1 text-xs text-graphite-300">These kiosks are already in the list for the same technician and date. If this QA is finished, discard it with ✕.</p>` : ""}
-            </div>
-            <div class="flex flex-shrink-0 items-center gap-2">
-              <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
-              <button type="button" data-delete-draft="${draft.id}" aria-label="Discard this inspection" class="rounded-md border border-graphite-600 px-2 py-1.5 text-xs text-graphite-400 transition hover:border-fail hover:text-failtext">✕</button>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
+  // one entry per kiosk of every unfinished inspection, filtered like the finished ones
+  function buildProgressRows(f) {
+    const rows = [];
+    lastDrafts.forEach((draft) => {
+      const serials = (draft.serialValues || []).filter(Boolean);
+      serials.forEach((serial) => rows.push({ draft, serial, total: serials.length }));
+    });
+    return rows.filter(({ draft, serial }) => {
+      const date = draft.dateValue || "";
+      if (f.technician && draft.technician !== f.technician) return false;
+      if (f.serial && !serial.toUpperCase().includes(f.serial)) return false;
+      if (f.from && date < f.from) return false;
+      if (f.to && date > f.to) return false;
+      if (f.onlyFails) return false; // nothing has been decided yet
+      return true;
+    });
   }
 
-  document.getElementById("draft-list").addEventListener("click", (e) => {
-    const deleteBtn = e.target.closest("[data-delete-draft]");
-    const confirmBtn = e.target.closest("[data-confirm-delete-draft]");
-    const cancelBtn = e.target.closest("[data-cancel-delete-draft]");
+  function savedText(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return d.toDateString() === new Date().toDateString()
+      ? `saved ${time}`
+      : `saved ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+  }
 
-    if (deleteBtn) {
-      pendingDeleteDraftId = deleteBtn.dataset.deleteDraft;
-      renderDraftList();
-    } else if (confirmBtn) {
-      const id = confirmBtn.dataset.confirmDeleteDraft;
-      pendingDeleteDraftId = null;
-      lastDrafts = lastDrafts.filter((d) => d.id !== id); // gone from the screen at once ...
-      renderDraftList();
-      deleteDraft(id).then(refreshDraftList);              // ... and the list is re-read once the server has deleted it
-    } else if (cancelBtn) {
-      pendingDeleteDraftId = null;
-      renderDraftList();
+  const attr = (v) => String(v).replace(/"/g, "&quot;");
+
+  function progressRowHtml({ draft, serial, total }) {
+    const id = attr(draft.id);
+    const lead = `
+      <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
+      <td>${escapeHtml(draft.technician || "")}</td>
+      <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>`;
+
+    if (pendingDelete && pendingDelete.id === draft.id && pendingDelete.serial === serial) {
+      return `
+        <tr class="in-progress" data-progress-draft="${id}">${lead}
+          <td colspan="3" class="text-graphite-100">Discard this whole inspection${total > 1 ? ` (all ${total} kiosks)` : ""}? This can't be undone.</td>
+          <td class="whitespace-nowrap">
+            <button type="button" data-confirm-delete-draft="${id}" class="rounded-md bg-fail px-2.5 py-1 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
+            <button type="button" data-cancel-delete-draft="1" class="ml-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
+          </td>
+        </tr>`;
     }
-  });
+    const saved = savedText(draft.savedAt);
+    const hint = looksAlreadySubmitted(draft, serial)
+      ? `<span class="mt-1 block text-xs text-graphite-400">Already in the list for this technician and date. If it's finished, discard it with ✕.</span>`
+      : "";
+    return `
+      <tr class="in-progress" data-progress-draft="${id}">${lead}
+        <td colspan="3">
+          <span class="inline-flex items-center gap-2 text-graphite-200"><span class="progress-dot" aria-hidden="true"></span>Currently in progress</span>
+          <span class="ml-2 text-graphite-500">${escapeHtml(saved)}${total > 1 ? ` · ${total} kiosks together` : ""}</span>
+          ${hint}
+        </td>
+        <td class="whitespace-nowrap">
+          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" class="rounded-md bg-leaf-500 px-2.5 py-1 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
+          <button type="button" data-delete-draft="${id}" data-delete-serial="${attr(serial)}" aria-label="Discard this inspection" class="ml-1 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 transition hover:border-fail hover:text-failtext">✕</button>
+        </td>
+      </tr>`;
+  }
 
   // Kiosks inspected together are submitted in one go, so they sit on
   // neighbouring sheet rows with the same technician, date and QA time. Count
   // such runs, so the table can say "(3 kiosks)" instead of implying that each
   // kiosk took that long. (Rows without a QA time are never grouped.)
   function markSessions(list) {
-    list.forEach((s) => { s.sessionKiosks = 1; });
+    list.forEach((s) => { s.sessionKiosks = 1; s.__sessionStart = undefined; });
     const byRow = list.filter((s) => typeof s.row === "number").slice().sort((a, b) => a.row - b.row);
     let i = 0;
     while (i < byRow.length) {
@@ -600,7 +607,10 @@
           byRow[j].durationSec === first.durationSec
         ) j++;
       }
-      for (let k = i; k < j; k++) byRow[k].sessionKiosks = j - i;
+      for (let k = i; k < j; k++) {
+        byRow[k].sessionKiosks = j - i;
+        byRow[k].__sessionStart = first.row; // the sheet row where this submission began
+      }
       i = j;
     }
   }
@@ -636,13 +646,14 @@
     return `<div class="text-[12px] leading-tight text-graphite-500" title="Who did the first QA of this kiosk, and how many QAs it has had">first: ${escapeHtml(first)} · ${runs.length} QAs</div>`;
   }
 
-  function renderTable(filtered) {
+  function renderTable(filtered, progress) {
     const tbody = document.getElementById("table-body");
-    tbody.innerHTML = filtered
+    const progressHtml = progress.map(progressRowHtml).join("");
+    const doneHtml = filtered
       .map((s, i) => {
         const { pass, fail } = countResults(s);
         return `
-          <tr>
+          <tr${justFinished.has((s.serial || "").toUpperCase()) ? ' class="just-finished"' : ""}>
             <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
             <td>${escapeHtml(s.technician)}${runsNoteHtml(s)}</td>
             <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
@@ -657,9 +668,11 @@
         `;
       })
       .join("");
+    tbody.innerHTML = progressHtml + doneHtml; // unfinished ones on top, then the finished ones
 
-    document.getElementById("empty-state").classList.toggle("hidden", filtered.length > 0);
-    document.getElementById("table-card").classList.toggle("hidden", filtered.length === 0);
+    const any = filtered.length + progress.length > 0;
+    document.getElementById("empty-state").classList.toggle("hidden", any);
+    document.getElementById("table-card").classList.toggle("hidden", !any);
   }
 
   // ---------------------------------------------------------------------
@@ -1086,18 +1099,36 @@
   let currentFiltered = [];
 
   function refresh() {
+    populateFilterOptions();
     const f = getFilters();
     currentFiltered = applyFilters(allSubmissions, f);
+    currentProgress = buildProgressRows(f);
     document.getElementById("filter-count").textContent =
-      `${currentFiltered.length} of ${groupBySerial(allSubmissions).length} kiosks`;
-    renderTable(currentFiltered);
+      `${currentFiltered.length} of ${groupBySerial(allSubmissions).length} kiosks` +
+      (currentProgress.length ? ` · ${currentProgress.length} in progress` : "");
+    renderTable(currentFiltered, currentProgress);
   }
 
   document.getElementById("table-body").addEventListener("click", (e) => {
     const detailBtn = e.target.closest("[data-detail-idx]");
     const reqaBtn = e.target.closest("[data-reqa-idx]");
+    const deleteBtn = e.target.closest("[data-delete-draft]");
+    const confirmBtn = e.target.closest("[data-confirm-delete-draft]");
+    const cancelBtn = e.target.closest("[data-cancel-delete-draft]");
 
-    if (detailBtn) {
+    if (deleteBtn) {
+      pendingDelete = { id: deleteBtn.dataset.deleteDraft, serial: deleteBtn.dataset.deleteSerial };
+      refresh();
+    } else if (confirmBtn) {
+      const id = confirmBtn.dataset.confirmDeleteDraft;
+      pendingDelete = null;
+      lastDrafts = lastDrafts.filter((d) => d.id !== id); // gone from the screen at once ...
+      refresh();
+      deleteDraft(id).then(refreshDraftList);              // ... and the list is re-read once the server has deleted it
+    } else if (cancelBtn) {
+      pendingDelete = null;
+      refresh();
+    } else if (detailBtn) {
       openDetail(currentFiltered[Number(detailBtn.dataset.detailIdx)]);
     } else if (reqaBtn) {
       startReQa(currentFiltered[Number(reqaBtn.dataset.reqaIdx)]);
@@ -1169,6 +1200,61 @@
     if (allSubmissions.length) renderChart(allSubmissions);
   });
 
+  // ---------------------------------------------------------------------
+  // LIVE UPDATES — the unfinished inspections are re-read every 30 s (it is a small
+  // list), so rows appear when someone starts a QA and turn into finished rows
+  // when it is submitted, without reloading the page. The full list of finished
+  // inspections is only re-read when an unfinished one has disappeared (it was
+  // probably submitted) and, as a safety net, every 3 minutes. Nothing is done
+  // while the tab is hidden or the Details window is open (it could be in use).
+  // ---------------------------------------------------------------------
+  const DRAFT_POLL_MS = 30000;
+  const SUBMISSION_POLL_MS = 180000;
+  let lastSubmissionsLoad = Date.now();
+  let pollBusy = false;
+
+  async function reloadSubmissionsQuietly(serialsInProgressBefore) {
+    const fresh = await fetchSubmissionsQuietly();
+    if (!fresh) return;
+    lastSubmissionsLoad = Date.now();
+    // a kiosk that was in progress and now has a NEWER finished QA is the one to highlight
+    const newestRow = (list) => {
+      const m = {};
+      list.forEach((s) => {
+        const key = (s.serial || "").toUpperCase();
+        if (typeof s.row === "number") m[key] = Math.max(m[key] || 0, s.row);
+      });
+      return m;
+    };
+    const before = newestRow(allSubmissions);
+    const after = newestRow(fresh);
+    Object.keys(after).forEach((key) => {
+      if (serialsInProgressBefore.has(key) && after[key] > (before[key] || 0)) justFinished.add(key);
+    });
+    replaceAllSubmissions(fresh, currentDetail);
+    setTimeout(() => justFinished.clear(), 6000);
+  }
+
+  async function pollTick() {
+    if (pollBusy || !dataLoaded || document.hidden) return;
+    if (document.getElementById("detail-modal").classList.contains("open")) return;
+    pollBusy = true;
+    try {
+      const idsBefore = new Set(lastDrafts.map((d) => d.id));
+      const serialsBefore = new Set(lastDrafts.flatMap((d) => (d.serialValues || []).filter(Boolean).map((v) => v.toUpperCase())));
+      await refreshDraftList();
+      const someGone = [...idsBefore].some((id) => !lastDrafts.some((d) => d.id === id));
+      if (someGone || Date.now() - lastSubmissionsLoad > SUBMISSION_POLL_MS) await reloadSubmissionsQuietly(serialsBefore);
+    } finally {
+      pollBusy = false;
+    }
+  }
+
+  setInterval(pollTick, DRAFT_POLL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollTick(); // coming back to the tab: catch up at once
+  });
+
   (async function init() {
     refreshDraftList(); // independent of submissions; don't block on it
     loadPeople();       // names for the "Edited by" choice
@@ -1180,7 +1266,7 @@
       s.__order = i;
     });
     markSessions(allSubmissions);
-    renderDraftList(); // now that the submissions are known, the "already submitted?" note can show
+    dataLoaded = true; // from now on the table (finished and in-progress rows) can be drawn
 
     document.getElementById("load-status").classList.add("hidden");
     document.getElementById("stats-grid").classList.remove("hidden");
@@ -1193,7 +1279,7 @@
     renderTechnicians(allSubmissions);
     renderChart(allSubmissions);
 
-    populateFilterOptions(allSubmissions);
+    populateFilterOptions();
     refresh();
   })();
 })();
