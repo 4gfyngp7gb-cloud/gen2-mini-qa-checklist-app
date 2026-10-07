@@ -356,7 +356,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-05.3</p>
+      <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-07.2</p>
 
       <!-- Screw confirmation modal (PMS / Housing) -->
       <div id="screw-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4">
@@ -1024,12 +1024,16 @@
 
   // ---------------------------------------------------------------------
   // SCREW CONFIRMATION (PMS + Housing) — a popup asks "are all the screws
-  // tightened?" once a section is fully answered for every active kiosk.
-  // Submit stays blocked for that section until it's answered "Yes".
+  // tightened?" at a set moment of each section, once it has happened for
+  // every active kiosk:
+  //   - PMS:     right after "Glass screws" is answered; the last PMS step,
+  //              "PMS screen fixing screws", is done after the popup.
+  //   - Housing: once the whole section is answered.
+  // Submit stays blocked for that section until it's confirmed.
   // ---------------------------------------------------------------------
   const SCREW_CHECK_STEPS = ["4", "5"]; // PMS, Housing
   let screwsConfirmed = { 4: false, 5: false };
-  let sectionWasComplete = { 4: false, 5: false };
+  let screwCheckWasDue = { 4: false, 5: false };
   let screwModalStep = null;
 
   const screwModal = document.getElementById("screw-modal");
@@ -1042,9 +1046,37 @@
     return kiosks.every((k) => kioskAnswers[k][step].every((v) => v !== null));
   }
 
+  // Sections whose screw popup comes earlier than "section complete": the
+  // popup is due once this item has been answered on every active kiosk.
+  const SCREW_TRIGGER_ITEM = { 4: "Glass screws" };
+
+  function screwTriggerIdx(step) {
+    const label = SCREW_TRIGGER_ITEM[step];
+    return label ? CHECKLISTS[step].items.indexOf(label) : -1; // -1: no early trigger
+  }
+
+  function isScrewCheckDue(step) {
+    const idx = screwTriggerIdx(step);
+    if (idx === -1) return isSectionComplete(step);
+    const kiosks = activeKioskIndices();
+    if (kiosks.length === 0) return false;
+    return kiosks.every((k) => kioskAnswers[k][step][idx] !== null);
+  }
+
+  // After the PMS popup, carry on with the step that follows the trigger
+  // ("PMS screen fixing screws"), on the first kiosk that still needs it.
+  function focusAfterScrewModal(step) {
+    const trigger = screwTriggerIdx(step);
+    if (trigger === -1) return;
+    const next = trigger + 1;
+    if (next >= CHECKLISTS[step].items.length) return;
+    const k = activeKioskIndices().find((kk) => kioskAnswers[kk][step][next] === null);
+    if (k !== undefined) focusCell(k, step, next);
+  }
+
   function resetScrewConfirmations() {
     screwsConfirmed = { 4: false, 5: false };
-    sectionWasComplete = { 4: false, 5: false };
+    screwCheckWasDue = { 4: false, 5: false };
   }
 
   // Locks the Housing section (visually and functionally) until the PMS
@@ -1075,6 +1107,12 @@
     screwModalTitle.textContent = `${title} screw check`;
     screwModalText.textContent = "Look over the unit and check there's no missing screw.";
     screwModal.classList.remove("hidden");
+
+    // The next row may be right behind the popup (PMS), so move the keyboard
+    // focus into the popup — Space/arrow keys must not answer rows behind it.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    screwModal.tabIndex = -1;
+    screwModal.focus();
 
     const timerText = document.getElementById("screw-modal-timer");
     const input = document.getElementById("screw-modal-input");
@@ -1116,29 +1154,34 @@
   });
   document.getElementById("screw-modal-input").addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    // Enter only confirms the popup. Stop it here so it can never reach anything else.
+    e.preventDefault();
+    e.stopPropagation();
     const confirmBtn = document.getElementById("screw-modal-confirm");
     if (!confirmBtn.disabled) confirmBtn.click();
   });
 
   document.getElementById("screw-modal-confirm").addEventListener("click", () => {
-    if (screwModalStep) {
-      screwsConfirmed[screwModalStep] = true;
+    const confirmedStep = screwModalStep;
+    if (confirmedStep) {
+      screwsConfirmed[confirmedStep] = true;
       document.getElementById("submit-error").classList.add("hidden");
     }
     closeScrewModal();
     updateHousingLockUI();
+    if (confirmedStep) focusAfterScrewModal(confirmedStep);
   });
 
-  // Called after every answer — pops the modal the moment a section
-  // transitions from incomplete to fully answered (not on every later click).
+  // Called after every answer — pops the modal the moment the check becomes
+  // due (see above), not on every later click.
   function maybeShowScrewConfirm(step) {
     if (SCREW_CHECK_STEPS.indexOf(step) === -1) return;
-    const complete = isSectionComplete(step);
-    if (complete && !sectionWasComplete[step]) {
-      sectionWasComplete[step] = true;
+    const due = isScrewCheckDue(step);
+    if (due && !screwCheckWasDue[step]) {
+      screwCheckWasDue[step] = true;
       if (!screwsConfirmed[step]) openScrewModal(step);
-    } else if (!complete) {
-      sectionWasComplete[step] = false;
+    } else if (!due) {
+      screwCheckWasDue[step] = false;
     }
     updateHousingLockUI();
   }
@@ -1169,6 +1212,7 @@
   }
 
   function focusCell(k, step, idx) {
+    if (!screwModal.classList.contains("hidden")) return; // the screw popup has the keyboard
     const items = CHECKLISTS[step].items;
     const secPos = SECTION_KEYS.indexOf(String(step));
 
@@ -1373,14 +1417,15 @@
 
       btnPass.addEventListener("click", () => {
         setCell(k, step, idx, "pass");
-        cell.focus({ preventScroll: true });
+        if (screwModal.classList.contains("hidden")) cell.focus({ preventScroll: true }); // the screw popup keeps the focus
       });
       btnFail.addEventListener("click", () => {
         setCell(k, step, idx, "fail");
-        cell.focus({ preventScroll: true });
+        if (screwModal.classList.contains("hidden")) cell.focus({ preventScroll: true }); // the screw popup keeps the focus
       });
 
       cell.addEventListener("keydown", (e) => {
+        if (!screwModal.classList.contains("hidden")) return; // nothing may be answered behind the screw popup
         if (e.key === "ArrowLeft") {
           e.preventDefault();
           setCell(k, step, idx, "pass");
@@ -1460,14 +1505,8 @@
   // ---------------------------------------------------------------------
   // GLOBAL KEYBOARD SHORTCUTS
   // ---------------------------------------------------------------------
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    if (viewWizard.style.display === "none") return;
-    if (!screwModal.classList.contains("hidden")) return; // don't let Enter bypass the modal
-    if (e.target.tagName === "TEXTAREA") return; // preserve newline in comments
-    e.preventDefault();
-    btnSubmit.click();
-  });
+  // Note: there is deliberately NO "Enter submits" shortcut. An inspection is
+  // only submitted by pressing the Submit button itself.
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Backspace") return;
@@ -1488,6 +1527,7 @@
   const postSubmitActions = document.getElementById("post-submit-actions");
 
   btnBack.addEventListener("click", () => {
+    flushDraftNow(); // don't lose the last answers on the way out
     window.location.href = "index.html";
   });
 
@@ -1557,12 +1597,41 @@
     return DRAFTS_KEY + ":" + id;
   }
 
+  function readLocalDraft(id) {
+    try {
+      const d = JSON.parse(localStorage.getItem(localCacheKey(id)));
+      return d && d.id === id && typeof d.savedAt === "string" ? d : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Save (insert or update) the draft currently open in the wizard.
   // Debounced and sent to the shared server store; also cached locally
   // immediately so nothing is lost if the network request fails.
-  function saveDraft() {
-    if (!currentDraftId) return;
-    const draft = {
+  // ---------------------------------------------------------------------
+  // DRAFT SAVING
+  // Every change is copied to this device at once (localStorage) and sent to
+  // the shared server shortly after. Server saves go out strictly one at a
+  // time and in order, so an older save can never overwrite a newer one, and
+  // whatever is still waiting is sent the moment the page is left or hidden.
+  // ---------------------------------------------------------------------
+  let saveInFlight = false;
+  let saveDirty = false;      // there are changes the server has not been sent yet
+  let saveRetryTimer = null;
+  const DRAFT_SAVE_TIMEOUT_MS = 30000; // a stuck request is given up on, so later saves can go out
+  let lastSavedAtMs = 0;
+
+  // Each save of a draft is stamped later than the one before it — also after
+  // resuming on another device whose clock runs behind — so the server can tell
+  // a stale save that arrives late from the current one and drop it.
+  function nextSavedAt() {
+    lastSavedAtMs = Math.max(Date.now(), lastSavedAtMs + 1);
+    return new Date(lastSavedAtMs).toISOString();
+  }
+
+  function buildDraftSnapshot() {
+    return {
       id: currentDraftId,
       technician: getTechnicianName(),
       dateValue: dateInput.value,
@@ -1570,28 +1639,73 @@
       serialValues,
       kioskAnswers,
       kioskComments,
-      savedAt: new Date().toISOString(),
+      savedAt: nextSavedAt(),
       elapsedSec: currentElapsedSec(),
     };
+  }
 
+  function sendDraftToServer(extra) {
+    // no-cors: we only need the request to be delivered, and it also lets the
+    // browser keep it going while the page is being closed (keepalive).
+    return fetch(WEBHOOK_URL, Object.assign({
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "saveDraft", draft: buildDraftSnapshot() }),
+    }, extra || {}));
+  }
+
+  async function pumpDraftSave() {
+    if (saveInFlight) return;               // the running save re-checks when it finishes
+    if (!saveDirty || !currentDraftId) return;
+    saveInFlight = true;
+    saveDirty = false;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const giveUp = setTimeout(() => controller && controller.abort(), DRAFT_SAVE_TIMEOUT_MS);
     try {
-      localStorage.setItem(localCacheKey(currentDraftId), JSON.stringify(draft));
+      await sendDraftToServer(controller ? { signal: controller.signal } : {});
+    } catch (err) {
+      console.error("Could not sync this draft to the shared server (will retry):", err);
+      saveDirty = true;
+      clearTimeout(saveRetryTimer);
+      saveRetryTimer = setTimeout(pumpDraftSave, 5000);
+    } finally {
+      clearTimeout(giveUp);
+      saveInFlight = false;
+    }
+    if (saveDirty && !saveRetryTimer) pumpDraftSave(); // more changes arrived meanwhile
+  }
+
+  function saveDraft() {
+    if (!currentDraftId) return;
+    try {
+      localStorage.setItem(localCacheKey(currentDraftId), JSON.stringify(buildDraftSnapshot()));
     } catch (e) {
       // ignore (quota / private browsing)
     }
-
+    saveDirty = true;
+    saveRetryTimer = null;
     clearTimeout(saveDraftTimer);
-    saveDraftTimer = setTimeout(() => {
-      draft.elapsedSec = currentElapsedSec(); // up to date at the moment of sending
-      fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "saveDraft", draft }),
-      }).catch((err) => {
-        console.error("Could not sync this draft to the shared server:", err);
-      });
-    }, 800);
+    saveDraftTimer = setTimeout(pumpDraftSave, 800);
   }
+
+  // Send whatever is still waiting right now — used when the page is hidden,
+  // closed, or we are about to navigate away.
+  function flushDraftNow() {
+    clearTimeout(saveDraftTimer);
+    if (!currentDraftId || !saveDirty) return;
+    saveDirty = false;
+    try {
+      sendDraftToServer({ keepalive: true }).catch((err) => console.error("Could not flush the draft:", err));
+    } catch (err) {
+      saveDirty = true;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushDraftNow();
+  });
+  window.addEventListener("pagehide", flushDraftNow);
 
   // Fetch the full shared list of unfinished inspections from the server.
   async function loadDrafts() {
@@ -1622,6 +1736,7 @@
 
   function applyDraft(draft) {
     restartQaTimer(draft.elapsedSec);
+    lastSavedAtMs = Math.max(lastSavedAtMs, Date.parse(draft.savedAt) || 0);
     setTechnicianName(draft.technician || "");
     kioskCount = Math.min(Math.max(draft.kioskCount || 1, 1), SERIAL_COUNT);
     serialValues =
@@ -1638,7 +1753,10 @@
       const restored = draft.kioskAnswers && draft.kioskAnswers[k];
       kioskAnswers[k] = restored ? restored : freshAnswerSet();
       SECTION_KEYS.forEach((step) => {
-        if (!kioskAnswers[k][step]) kioskAnswers[k][step] = new Array(CHECKLISTS[step].items.length).fill(null);
+        // Make every list exactly as long as the current checklist, with only
+        // "pass" / "fail" / null in it (a copy from an older version may differ).
+        const saved = Array.isArray(kioskAnswers[k][step]) ? kioskAnswers[k][step] : [];
+        kioskAnswers[k][step] = CHECKLISTS[step].items.map((_, i) => (saved[i] === "pass" || saved[i] === "fail" ? saved[i] : null));
       });
     }
 
@@ -1656,7 +1774,7 @@
     // still prompt for confirmation if a section is done but unconfirmed.
     resetScrewConfirmations();
     SCREW_CHECK_STEPS.forEach((step) => {
-      sectionWasComplete[step] = isSectionComplete(step);
+      screwCheckWasDue[step] = isScrewCheckDue(step);
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1821,7 +1939,12 @@
 
     if (draftId) {
       const [drafts] = await Promise.all([loadDrafts(), peopleListReady]);
-      const draft = drafts.find((d) => d.id === draftId);
+      let draft = drafts.find((d) => d.id === draftId);
+      // This device keeps a copy of every change the moment it is made. If that
+      // copy is newer than the shared one (the last save may not have reached
+      // the server), or the server never got the draft, use the newer one.
+      const local = readLocalDraft(draftId);
+      if (local && (!draft || String(local.savedAt) > String(draft.savedAt))) draft = local;
       if (draft) {
         currentDraftId = draft.id;
         applyDraft(draft);
