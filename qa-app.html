@@ -356,7 +356,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-07.2</p>
+      <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-07.3</p>
 
       <!-- Screw confirmation modal (PMS / Housing) -->
       <div id="screw-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4">
@@ -1617,6 +1617,7 @@
   // whatever is still waiting is sent the moment the page is left or hidden.
   // ---------------------------------------------------------------------
   let saveInFlight = false;
+  let saveInFlightPromise = null; // settles when the save that is on its way has been delivered
   let saveDirty = false;      // there are changes the server has not been sent yet
   let saveRetryTimer = null;
   const DRAFT_SAVE_TIMEOUT_MS = 30000; // a stuck request is given up on, so later saves can go out
@@ -1663,7 +1664,9 @@
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     const giveUp = setTimeout(() => controller && controller.abort(), DRAFT_SAVE_TIMEOUT_MS);
     try {
-      await sendDraftToServer(controller ? { signal: controller.signal } : {});
+      const sending = sendDraftToServer(controller ? { signal: controller.signal } : {});
+      saveInFlightPromise = sending.catch(() => {});
+      await sending;
     } catch (err) {
       console.error("Could not sync this draft to the shared server (will retry):", err);
       saveDirty = true;
@@ -1719,19 +1722,32 @@
     return [];
   }
 
-  // Remove only the draft currently open in the wizard (e.g. after submitting it)
+  // Called once the inspection has been submitted. From here on this draft is
+  // finished: nothing may save it again, and it is deleted on the server — but
+  // only after any save that is still on its way has been delivered, so that
+  // save cannot arrive after the delete and bring the draft back.
   function clearDraft() {
-    if (!currentDraftId) return;
+    const id = currentDraftId;
+    if (!id) return;
+
+    clearTimeout(saveDraftTimer);
+    clearTimeout(saveRetryTimer);
+    saveRetryTimer = null;
+    saveDirty = false;
+    currentDraftId = null; // saveDraft / flush / retry all do nothing without a draft id
+
     try {
-      localStorage.removeItem(localCacheKey(currentDraftId));
+      localStorage.removeItem(localCacheKey(id));
     } catch (e) {
       // ignore
     }
-    fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "deleteDraft", id: currentDraftId }),
-    }).catch((err) => console.error("Could not clear this draft on the server:", err));
+    const deleteOnServer = () =>
+      fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "deleteDraft", id }),
+      }).catch((err) => console.error("Could not clear this draft on the server:", err));
+    (saveInFlight && saveInFlightPromise ? saveInFlightPromise : Promise.resolve()).then(deleteOnServer);
   }
 
   function applyDraft(draft) {
@@ -1865,6 +1881,7 @@
       submittedAt: new Date().toISOString(),
       inspectionDate: dateInput.value,
       durationSec: currentElapsedSec(), // how long this QA session took
+      draftId: currentDraftId,          // lets the server remove the unfinished draft with the submission
       kiosks,
     };
   }
