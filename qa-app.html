@@ -80,6 +80,26 @@
     transition: max-width 180ms ease;
   }
 
+  /* ---- progress bar, collapsible sections, jump targets ---- */
+  .progress-chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    border: 1px solid rgb(var(--g-600)); border-radius: 0.375rem;
+    padding: 0.15rem 0.5rem; font-size: 0.8125rem; line-height: 1.25rem;
+    color: rgb(var(--g-400)); background: transparent; transition: border-color 150ms ease, color 150ms ease;
+  }
+  .progress-chip:hover { border-color: rgb(var(--leaf-500)); color: rgb(var(--g-100)); }
+  .progress-chip[data-state="started"] { border-color: rgb(var(--leaf-500) / 0.55); color: rgb(var(--g-200)); }
+  .progress-chip[data-state="complete"] { border-color: rgb(var(--pass) / 0.6); background: rgb(var(--pass) / 0.12); color: rgb(var(--pass-text)); }
+  .progress-chip[data-current="true"] { box-shadow: 0 0 0 2px rgb(var(--g-100) / 0.3); }
+  .progress-chip .chip-fails { color: rgb(var(--fail-text)); font-weight: 600; }
+  /* leave room above a scrolled-to card for the sticky bar; the exact value is set from the bar's real height */
+  [data-section-card] { scroll-margin-top: var(--bar-clearance, 7rem); }
+  .flash-target { animation: qa-target 1.4s ease-out 1; }
+  @keyframes qa-target {
+    0% { box-shadow: 0 0 0 4px rgb(var(--leaf-500) / 0.75); }
+    100% { box-shadow: 0 0 0 4px rgb(var(--leaf-500) / 0); }
+  }
+
   .view { display: none; }
   .view.active { display: block; }
 
@@ -273,6 +293,14 @@
         </button>
       </header>
 
+      <!-- Progress: stays at the top while scrolling; each chip jumps to its section -->
+      <div id="progress-bar" class="sticky top-2 z-30 mb-5 hidden rounded-lg border border-graphite-700 bg-graphite-950/95 px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur">
+        <div id="progress-chips" class="flex flex-wrap items-center gap-2"></div>
+        <div id="progress-track" class="mt-2 h-1.5 overflow-hidden rounded-full bg-graphite-800" role="progressbar" aria-label="Checks answered" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progress-fill" class="h-full rounded-full bg-leaf-500 transition-all duration-300" style="width:0%"></div>
+        </div>
+      </div>
+
       <main class="flex-1 space-y-5">
 
         <!-- KIOSK INFO -->
@@ -365,27 +393,40 @@
         <p id="submit-error" class="hidden text-sm text-failtext"></p>
         <div id="submit-status" class="hidden rounded-md border p-3 text-sm"></div>
 
-        <!-- Post-submission actions -->
-        <div id="post-submit-actions" class="hidden flex flex-col gap-2.5 sm:flex-row">
-          <button
-            id="btn-done-new"
-            type="button"
-            class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500"
+        <!-- After a successful submit: a short confirmation, then the page returns to the dashboard on its own -->
+        <div id="post-submit-actions" class="hidden flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <p class="text-sm text-graphite-300">Taking you back to the dashboard…</p>
+          <a
+            id="btn-done-dashboard"
+            href="index.html"
+            class="rounded-md bg-leaf-500 px-4 py-2.5 text-center text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600"
           >
-            Start a new QA process
-          </button>
-          <button
-            id="btn-done-sheet"
-            type="button"
-            class="flex-1 rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500"
-          >
-            Open QA checklist sheet
-          </button>
+            Go to the dashboard now
+          </a>
         </div>
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.6</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.9</p>
+
+      <!-- Discard confirmation -->
+      <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
+        <div class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
+          <h3 id="discard-modal-title" class="text-base font-semibold text-graphite-100">Discard this inspection?</h3>
+          <p class="mt-2 text-sm text-graphite-300">Everything you entered will be deleted. Nothing is submitted, and nothing is kept as an unfinished inspection either. This can't be undone.</p>
+          <p id="discard-modal-error" class="mt-3 hidden text-sm text-failtext"></p>
+          <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button id="discard-modal-cancel" type="button"
+              class="rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500 disabled:cursor-not-allowed disabled:opacity-60">
+              Keep working
+            </button>
+            <button id="discard-modal-confirm" type="button"
+              class="rounded-md bg-fail px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+              Yes, discard
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- Screw confirmation modal (PMS / Housing) -->
       <div id="screw-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4">
@@ -411,8 +452,20 @@
 
       <!-- Nav -->
       <footer id="wizard-nav" class="mt-5 flex items-center justify-end gap-3">
+        <div id="bottom-status" class="mr-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-sm text-graphite-300">
+          <span id="bottom-progress" class="font-mono"></span>
+          <span class="inline-flex items-center gap-1 font-mono text-graphite-400" title="Time spent on this QA so far">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+            <span id="bottom-time">0:00</span>
+          </span>
+          <span id="save-status" class="text-graphite-400" aria-live="polite"></span>
+        </div>
+        <button id="btn-discard" type="button"
+          class="flex-shrink-0 whitespace-nowrap rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-300 transition hover:border-fail hover:text-failtext disabled:cursor-not-allowed disabled:opacity-60">
+          Discard inspection
+        </button>
         <button id="btn-submit" type="button"
-          class="rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-60">
+          class="flex-shrink-0 whitespace-nowrap rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-60">
           Submit inspection
         </button>
       </footer>
@@ -429,7 +482,6 @@
   // CONFIG
   // ---------------------------------------------------------------------
   const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
-  const SHEET_URL = "https://docs.google.com/spreadsheets/d/1oni2xKa8IdRIW_Q7hNd1DTPU9WoT17Z0tYYlOnd20Jg/edit?gid=1444761320#gid=1444761320";
   const DRAFTS_KEY = "qaChecklistDrafts_v1";
   const SERIAL_COUNT = 5;
 
@@ -452,17 +504,6 @@
   function showWizard() {
     viewWizard.style.display = "flex";
   }
-
-  function openSheet() {
-    window.open(SHEET_URL, "_blank", "noopener");
-  }
-
-  document.getElementById("btn-done-sheet").addEventListener("click", openSheet);
-  document.getElementById("btn-done-new").addEventListener("click", () => {
-    currentDraftId = generateDraftId();
-    resetWizard();
-    showWizard();
-  });
 
   // ---------------------------------------------------------------------
   // CHECKLIST DATA
@@ -1156,6 +1197,11 @@
   const SCREW_CONFIRM_DELAY_SECONDS = 20;
   let screwModalTimer = null;
 
+  // True while the screw popup or the discard confirmation is on screen.
+  function modalIsOpen() {
+    return !screwModal.classList.contains("hidden") || !document.getElementById("discard-modal").classList.contains("hidden");
+  }
+
   function openScrewModal(step) {
     screwModalStep = step;
     const title = CHECKLISTS[step].title;
@@ -1260,6 +1306,8 @@
       cell.dataset.selected = value;
     }
     updateSectionCounter(step);
+    maybeAutoCollapse(step);
+    updateProgress();
     if (step === ROUND_STEP) updateRound2Visibility();
     document.getElementById("submit-error").classList.add("hidden");
     maybeShowScrewConfirm(step);
@@ -1267,7 +1315,7 @@
   }
 
   function focusCell(k, step, idx) {
-    if (!screwModal.classList.contains("hidden")) return; // the screw popup has the keyboard
+    if (modalIsOpen()) return; // a popup has the keyboard
     const items = CHECKLISTS[step].items;
     const secPos = SECTION_KEYS.indexOf(String(step));
 
@@ -1294,6 +1342,7 @@
 
     const el = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${idx}"]`);
     if (el) {
+      expandSection(String(step)); // a collapsed section opens before its row is focused
       el.focus({ preventScroll: false });
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -1310,8 +1359,264 @@
       fail += list.filter((v) => v === "fail").length;
     });
     const remaining = total - pass - fail;
-    el.textContent = `${pass} Pass · ${fail} Fail` + (remaining > 0 ? ` · ${remaining} remaining` : "");
+    el.textContent = (remaining === 0 && total > 0 ? "✓ Complete · " : "") + `${pass} Pass · ${fail} Fail` + (remaining > 0 ? ` · ${remaining} remaining` : "");
+    // Red when there is a Fail, otherwise the normal grey. Both classes set a colour, so the grey
+    // must come off (which of two colour classes wins would otherwise depend on the stylesheet).
     el.classList.toggle("text-failtext", fail > 0);
+    el.classList.toggle("text-graphite-400", fail === 0);
+  }
+
+  // =====================================================================
+  // PROGRESS — the bar at the top, sections that fold away when finished,
+  // and buttons that jump to the next open check / the failed checks.
+  // =====================================================================
+  const shortTitle = (step) => CHECKLISTS[step].title.replace(/\s+checks?$/i, "");
+  const collapsed = {};            // step -> true/false (decided automatically or by the person)
+  const userOpened = {};           // step -> true once the person re-opened a FOLDED section: it is not folded away on its own again
+  const wasComplete = {};          // step -> was it complete the last time we looked
+  const autoCollapseTimers = {};
+  const AUTO_COLLAPSE_MS = 900;    // a short moment, so a slip on the last check can still be corrected
+  let failCursor = -1;
+
+  function sectionStats(step) {
+    let done = 0, total = 0, fail = 0;
+    activeKioskIndices().forEach((k) => {
+      const list = kioskAnswers[k][step] || [];
+      total += list.length;
+      done += list.filter((v) => v === "pass" || v === "fail").length;
+      fail += list.filter((v) => v === "fail").length;
+    });
+    return { step, done, total, fail, complete: total > 0 && done === total };
+  }
+
+  function applyCollapse(step) {
+    const card = matrixRoot.querySelector(`[data-section-card="${step}"]`);
+    if (!card) return;
+    const isCollapsed = !!collapsed[step];
+    card.querySelector("[data-section-body]").classList.toggle("hidden", isCollapsed);
+    const btn = card.querySelector("[data-toggle-step]");
+    btn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+    btn.querySelector("[data-toggle-label]").textContent = isCollapsed ? "Show" : "Hide";
+    btn.querySelector("[data-toggle-chevron]").style.transform = isCollapsed ? "rotate(-90deg)" : "";
+  }
+
+  function setCollapsed(step, value) {
+    collapsed[step] = value;
+    applyCollapse(step);
+    if (!value) document.querySelectorAll(".matrix-wrap").forEach(updateScrollFade); // tables have just reappeared
+  }
+
+  // Any way of getting to a section (a chip, focusing a row, the Next button) opens it if it is
+  // folded. Only re-opening a folded section counts as "on purpose" (it then stays open); walking
+  // through an open section with the keyboard does not, or a section worked through with Space
+  // would never fold away when it is finished.
+  function expandSection(step) {
+    if (collapsed[step]) {
+      setCollapsed(step, false);
+      userOpened[step] = true;
+    }
+  }
+
+  // After the cards are (re)built: finished sections start folded; a section that is no longer
+  // complete (e.g. a kiosk was added) is opened again.
+  function applyCollapseAll() {
+    SECTION_KEYS.forEach((step) => {
+      const st = sectionStats(step);
+      wasComplete[step] = st.complete;
+      if (collapsed[step] === undefined) collapsed[step] = st.complete;
+      else if (collapsed[step] && !st.complete) collapsed[step] = false;
+      applyCollapse(step);
+    });
+  }
+
+  // When a section has just become complete, fold it away after a moment — with or without a Fail
+  // (the folded card still shows the Fail count in red, the section's chip shows it, and the red
+  // "fails" chip jumps straight to it). A section the person re-opened on purpose is left alone.
+  function maybeAutoCollapse(step) {
+    const st = sectionStats(step);
+    if (st.complete && !wasComplete[step]) {
+      wasComplete[step] = true;
+      if (!userOpened[step]) {
+        clearTimeout(autoCollapseTimers[step]);
+        autoCollapseTimers[step] = setTimeout(() => {
+          if (sectionStats(step).complete && !userOpened[step]) {
+            setCollapsed(step, true);
+            keepFocusedRowInView();
+          }
+        }, AUTO_COLLAPSE_MS);
+      }
+    } else if (!st.complete) {
+      wasComplete[step] = false;
+      clearTimeout(autoCollapseTimers[step]);
+    }
+  }
+
+  // Folding a section changes the height of the page above the row the person is working on
+  // (they have usually already moved on to the next section). Keep that row where it can be seen.
+  function keepFocusedRowInView() {
+    const el = document.activeElement;
+    if (!el || !el.classList || !el.classList.contains("qa-row")) return;
+    const bar = document.getElementById("progress-bar");
+    const top = bar.classList.contains("hidden") ? 0 : bar.getBoundingClientRect().bottom;
+    const r = el.getBoundingClientRect();
+    if (r.top < top || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center" });
+  }
+
+  function revealAndFocus(el) {
+    if (!el) return;
+    expandSection(el.dataset.step);
+    if (!modalIsOpen()) {
+      try { el.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash-target");
+    setTimeout(() => el.classList.remove("flash-target"), 1500);
+  }
+
+  function goToSection(step) {
+    expandSection(step);
+    const card = matrixRoot.querySelector(`[data-section-card="${step}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function goToNextFail() {
+    const cells = Array.from(document.querySelectorAll('.qa-row[data-selected="fail"]'));
+    if (cells.length === 0) return;
+    failCursor = (failCursor + 1) % cells.length;
+    revealAndFocus(cells[failCursor]);
+  }
+
+  // The first check, in order, that still has no answer: row by row, kiosk by kiosk. Round 2
+  // checks that are not open yet are skipped, and so is Housing while it is locked.
+  function nextOpenTarget() {
+    const kiosks = activeKioskIndices();
+    for (const step of SECTION_KEYS) {
+      if (step === "5" && isHousingLocked()) continue;
+      const n = CHECKLISTS[step].items.length;
+      for (let idx = 0; idx < n; idx++) {
+        if (isRowHidden(step, idx)) continue;
+        for (const k of kiosks) {
+          if (!kioskAnswers[k][step][idx]) return { k, step, idx };
+        }
+      }
+    }
+    return null;
+  }
+
+  function goToNextOpen() {
+    const t = nextOpenTarget();
+    if (t) {
+      revealAndFocus(document.querySelector(`.qa-row[data-kiosk="${t.k}"][data-step="${t.step}"][data-index="${t.idx}"]`));
+    } else if (isHousingLocked()) {
+      goToSection("5"); // everything else is done: Housing is waiting for the PMS screw confirmation
+    }
+  }
+
+  function chipHtml(st) {
+    const state = st.complete ? "complete" : st.done > 0 ? "started" : "empty";
+    const label = `${shortTitle(st.step)}: ${st.done} of ${st.total} done${st.fail ? `, ${st.fail} failed` : ""}`;
+    return `<button type="button" class="progress-chip" data-goto-step="${st.step}" data-state="${state}" aria-label="Go to ${label}">
+      ${st.complete ? '<span aria-hidden="true">✓</span> ' : ""}<span>${shortTitle(st.step)}</span> <span class="font-mono">${st.done}/${st.total}</span>${st.fail ? ` <span class="chip-fails" aria-hidden="true">✕${st.fail}</span>` : ""}
+    </button>`;
+  }
+
+  let lastChipsHtml = "";
+
+  function updateProgress() {
+    const bar = document.getElementById("progress-bar");
+    const kiosks = activeKioskIndices().length;
+    bar.classList.toggle("hidden", kiosks === 0);
+
+    const stats = SECTION_KEYS.map(sectionStats);
+    const done = stats.reduce((n, st) => n + st.done, 0);
+    const total = stats.reduce((n, st) => n + st.total, 0);
+    const fails = stats.reduce((n, st) => n + st.fail, 0);
+
+    const failChip = fails > 0
+      ? `<button type="button" class="progress-chip" data-goto-fail="1" data-state="started" style="border-color: rgb(var(--fail) / 0.6)" aria-label="Jump to a failed check (${fails} in total)"><span class="chip-fails">✕ ${fails} fail${fails === 1 ? "" : "s"}</span></button>`
+      : "";
+    const next = total > 0 && done < total
+      ? `<button type="button" class="progress-chip ml-auto" data-goto-next="1" data-state="started">Next open ›</button>`
+      : total > 0
+        ? `<span class="ml-auto text-sm font-medium" style="color: rgb(var(--pass-text))">✓ All checks answered</span>`
+        : "";
+    const html = stats.map(chipHtml).join("") + failChip + next;
+    if (html !== lastChipsHtml) {
+      document.getElementById("progress-chips").innerHTML = html;
+      lastChipsHtml = html;
+    }
+
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById("progress-fill").style.width = pct + "%";
+    document.getElementById("progress-track").setAttribute("aria-valuenow", String(pct));
+
+    document.getElementById("bottom-progress").textContent = kiosks === 0
+      ? "No kiosk yet"
+      : `${done} / ${total} checks` + (done < total ? ` · ${total - done} left` : " · all answered");
+
+    updateBarClearance();
+    updateCurrentSection();
+  }
+
+  // The bar is sticky, so a card scrolled into view must stop below it: bar height + its top
+  // offset + a little air. The bar gets taller when its chips wrap, so this is measured, not fixed.
+  function updateBarClearance() {
+    const bar = document.getElementById("progress-bar");
+    const h = bar.classList.contains("hidden") ? 0 : Math.ceil(bar.getBoundingClientRect().height);
+    document.documentElement.style.setProperty("--bar-clearance", h + 8 + 16 + "px");
+  }
+  window.addEventListener("resize", updateBarClearance);
+
+  // Highlights the chip of the section that is on screen right now.
+  function updateCurrentSection() {
+    const bar = document.getElementById("progress-bar");
+    if (bar.classList.contains("hidden")) return;
+    const ref = bar.getBoundingClientRect().bottom + 24;
+    let current = null;
+    matrixRoot.querySelectorAll("[data-section-card]").forEach((card) => {
+      if (card.getBoundingClientRect().top <= ref) current = card.dataset.sectionCard;
+    });
+    bar.querySelectorAll("[data-goto-step]").forEach((b) => { b.dataset.current = String(b.dataset.gotoStep === current); });
+  }
+
+  let scrollQueued = false;
+  window.addEventListener("scroll", () => {
+    if (scrollQueued) return;
+    scrollQueued = true;
+    requestAnimationFrame(() => { scrollQueued = false; updateCurrentSection(); });
+  }, { passive: true });
+
+  document.getElementById("progress-chips").addEventListener("click", (e) => {
+    const stepBtn = e.target.closest("[data-goto-step]");
+    if (stepBtn) goToSection(stepBtn.dataset.gotoStep);
+    else if (e.target.closest("[data-goto-fail]")) goToNextFail();
+    else if (e.target.closest("[data-goto-next]")) goToNextOpen();
+  });
+
+  matrixRoot.addEventListener("click", (e) => {
+    const toggle = e.target.closest("[data-toggle-step]");
+    if (!toggle) return;
+    const step = toggle.dataset.toggleStep;
+    if (collapsed[step]) expandSection(step);
+    else { userOpened[step] = false; setCollapsed(step, true); }
+  });
+
+  // ---- time spent so far, and whether the work is saved (bottom bar) ----
+  function formatClock(totalSec) {
+    const sec = Math.max(0, Math.round(totalSec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = String(sec % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  }
+  setInterval(() => { document.getElementById("bottom-time").textContent = formatClock(currentElapsedSec()); }, 1000);
+
+  function setSaveStatus(state) {
+    const el = document.getElementById("save-status");
+    el.classList.toggle("text-failtext", state === "error");
+    el.classList.toggle("text-graphite-400", state !== "error");
+    if (state === "saving") el.textContent = "Saving…";
+    else if (state === "error") el.textContent = "Couldn't save — retrying…";
+    else if (state === "saved") el.textContent = "✓ Saved " + new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    else el.textContent = "";
   }
 
   // One Pass/Fail pair (a focusable, keyboard-navigable cell).
@@ -1334,6 +1639,7 @@
     const activeKiosks = activeKioskIndices();
     if (activeKiosks.length === 0) {
       updatePageWidth();
+      updateProgress();
       matrixRoot.innerHTML = `
         <p class="rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
           Enter a serial number above to start the checklist.
@@ -1422,10 +1728,16 @@
       });
 
       card.innerHTML = `
-        <div class="flex items-baseline justify-between gap-3">
+        <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold text-graphite-100">${section.title}</h2>
+          <button type="button" data-toggle-step="${step}" aria-expanded="true" aria-controls="body-${step}"
+            class="flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1 text-sm text-graphite-400 transition hover:text-leaf-500">
+            <span data-toggle-label>Hide</span>
+            <svg data-toggle-chevron class="h-4 w-4 transition-transform" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+          </button>
         </div>
         <p class="mt-1 font-mono text-xs text-graphite-400" id="counter-${step}"></p>
+        <div id="body-${step}" data-section-body>
         ${warningHtml}
         ${
           step === "5"
@@ -1447,6 +1759,7 @@
               ${bodyRows}
             </tbody>
           </table>
+        </div>
         </div>
       `;
 
@@ -1474,15 +1787,15 @@
 
       btnPass.addEventListener("click", () => {
         setCell(k, step, idx, "pass");
-        if (screwModal.classList.contains("hidden")) cell.focus({ preventScroll: true }); // the screw popup keeps the focus
+        if (!modalIsOpen()) cell.focus({ preventScroll: true }); // a popup keeps the focus
       });
       btnFail.addEventListener("click", () => {
         setCell(k, step, idx, "fail");
-        if (screwModal.classList.contains("hidden")) cell.focus({ preventScroll: true }); // the screw popup keeps the focus
+        if (!modalIsOpen()) cell.focus({ preventScroll: true }); // a popup keeps the focus
       });
 
       cell.addEventListener("keydown", (e) => {
-        if (!screwModal.classList.contains("hidden")) return; // nothing may be answered behind the screw popup
+        if (modalIsOpen()) return; // nothing may be answered behind a popup
         if (e.key === "ArrowLeft") {
           e.preventDefault();
           setCell(k, step, idx, "pass");
@@ -1506,6 +1819,8 @@
 
     setupScrollFades();
     updateHousingLockUI();
+    applyCollapseAll(); // sections that are already complete (a resumed draft) start collapsed
+    updateProgress();
   }
 
   function updateScrollFade(wrap) {
@@ -1568,7 +1883,7 @@
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Backspace") return;
     if (viewWizard.style.display === "none") return;
-    if (!screwModal.classList.contains("hidden")) return; // don't let Backspace bypass the modal
+    if (modalIsOpen()) return; // don't let Backspace bypass a modal
     const tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     e.preventDefault();
@@ -1578,6 +1893,20 @@
   // ---------------------------------------------------------------------
   // NAV
   // ---------------------------------------------------------------------
+  const REDIRECT_AFTER_SUBMIT_MS = 2000; // how long "Inspection submitted" is shown before returning
+  const CLEANUP_WAIT_MS = 6000;
+  let pageIsFinished = false;            // submitted or discarded: this page must not be used again
+
+  function goToDashboard() {
+    window.location.href = "index.html";
+  }
+
+  // Coming back to this page with the browser's Back button after it was finished
+  // would show a dead form; start over instead.
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted && pageIsFinished) window.location.reload();
+  });
+
   const btnBack = document.getElementById("btn-back");
   const btnSubmit = document.getElementById("btn-submit");
   const wizardNav = document.getElementById("wizard-nav");
@@ -1673,10 +2002,12 @@
   // time and in order, so an older save can never overwrite a newer one, and
   // whatever is still waiting is sent the moment the page is left or hidden.
   // ---------------------------------------------------------------------
+  let draftSavesPaused = false; // true while "Discard inspection" is deleting the draft
   let saveInFlight = false;
   let saveInFlightPromise = null; // settles when the save that is on its way has been delivered
   let saveDirty = false;      // there are changes the server has not been sent yet
   let saveRetryTimer = null;
+  const DISCARD_WAIT_MS = 8000; // at most this long is spent waiting for a save that is on its way
   const DRAFT_SAVE_TIMEOUT_MS = 30000; // a stuck request is given up on, so later saves can go out
   let lastSavedAtMs = 0;
 
@@ -1714,7 +2045,7 @@
   }
 
   async function pumpDraftSave() {
-    if (saveInFlight) return;               // the running save re-checks when it finishes
+    if (saveInFlight || draftSavesPaused) return; // the running save re-checks when it finishes
     if (!saveDirty || !currentDraftId) return;
     saveInFlight = true;
     saveDirty = false;
@@ -1724,8 +2055,10 @@
       const sending = sendDraftToServer(controller ? { signal: controller.signal } : {});
       saveInFlightPromise = sending.catch(() => {});
       await sending;
+      if (!saveDirty && currentDraftId) setSaveStatus("saved"); // nothing newer is waiting
     } catch (err) {
       console.error("Could not sync this draft to the shared server (will retry):", err);
+      setSaveStatus("error");
       saveDirty = true;
       clearTimeout(saveRetryTimer);
       saveRetryTimer = setTimeout(pumpDraftSave, 5000);
@@ -1745,6 +2078,7 @@
     }
     saveDirty = true;
     saveRetryTimer = null;
+    setSaveStatus("saving");
     clearTimeout(saveDraftTimer);
     saveDraftTimer = setTimeout(pumpDraftSave, 800);
   }
@@ -1753,7 +2087,7 @@
   // closed, or we are about to navigate away.
   function flushDraftNow() {
     clearTimeout(saveDraftTimer);
-    if (!currentDraftId || !saveDirty) return;
+    if (!currentDraftId || !saveDirty || draftSavesPaused) return;
     saveDirty = false;
     try {
       sendDraftToServer({ keepalive: true }).catch((err) => console.error("Could not flush the draft:", err));
@@ -1779,13 +2113,29 @@
     return [];
   }
 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Deletes a draft on the server. Resolves when the request has been delivered and
+  // rejects if the server cannot be reached (no-cors: we only learn "delivered or not").
+  function deleteDraftOnServer(id) {
+    return fetch(WEBHOOK_URL, {
+      method: "POST",
+      mode: "no-cors",
+      keepalive: true, // keeps going even while the page is being left
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "deleteDraft", id }),
+    });
+  }
+
   // Called once the inspection has been submitted. From here on this draft is
   // finished: nothing may save it again, and it is deleted on the server — but
   // only after any save that is still on its way has been delivered, so that
-  // save cannot arrive after the delete and bring the draft back.
+  // save cannot arrive after the delete and bring the draft back. (The server also
+  // removes the draft together with the submission; this is the back-up.)
+  // Returns a promise that settles when that clean-up is done.
   function clearDraft() {
     const id = currentDraftId;
-    if (!id) return;
+    if (!id) return Promise.resolve();
 
     clearTimeout(saveDraftTimer);
     clearTimeout(saveRetryTimer);
@@ -1798,13 +2148,36 @@
     } catch (e) {
       // ignore
     }
-    const deleteOnServer = () =>
-      fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "deleteDraft", id }),
-      }).catch((err) => console.error("Could not clear this draft on the server:", err));
-    (saveInFlight && saveInFlightPromise ? saveInFlightPromise : Promise.resolve()).then(deleteOnServer);
+    return (saveInFlight && saveInFlightPromise ? saveInFlightPromise : Promise.resolve())
+      .then(() => deleteDraftOnServer(id))
+      .catch((err) => console.error("Could not clear this draft on the server:", err));
+  }
+
+  // "Discard inspection": delete the unfinished draft for good (nothing is kept).
+  // Saving is paused first; only once the server has the delete is the draft retired
+  // here. If the server cannot be reached nothing is lost: saving resumes and false
+  // is returned, so the person can try again or keep working.
+  async function discardDraft() {
+    draftSavesPaused = true;
+    clearTimeout(saveDraftTimer);
+    clearTimeout(saveRetryTimer);
+    saveRetryTimer = null;
+    try {
+      if (saveInFlight && saveInFlightPromise) await Promise.race([saveInFlightPromise, wait(DISCARD_WAIT_MS)]);
+      const id = currentDraftId;
+      if (id) {
+        await deleteDraftOnServer(id);
+        try { localStorage.removeItem(localCacheKey(id)); } catch (e) { /* ignore */ }
+      }
+      saveDirty = false;
+      currentDraftId = null;
+      return true;
+    } catch (err) {
+      console.error("Could not discard the draft on the server:", err);
+      draftSavesPaused = false;
+      if (saveDirty && currentDraftId) saveDraft(); // carry on saving as before
+      return false;
+    }
   }
 
   function applyDraft(draft) {
@@ -1961,6 +2334,8 @@
       errorEl.textContent = result.message;
       errorEl.classList.remove("hidden");
       if (result.focusEl) {
+        const owner = result.focusEl.closest && result.focusEl.closest("[data-section-card]");
+        if (owner) expandSection(owner.dataset.sectionCard);
         result.focusEl.focus();
         result.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -1984,15 +2359,108 @@
 
       setSubmitStatus("success", "Inspection submitted. Thank you.");
       console.log("QA checklist payload:", payload);
-      clearDraft();
+      const cleanup = clearDraft();
 
       wizardNav.classList.add("hidden");
       postSubmitActions.classList.remove("hidden");
+      pageIsFinished = true;
+      // The confirmation sits at the bottom of a long form: bring it into view, so the person
+      // sees that the inspection went through before the page returns to the dashboard.
+      document.getElementById("submit-status").scrollIntoView({ behavior: "smooth", block: "center" });
+
+      // Show the confirmation for a moment, then go back to the dashboard on our own, so
+      // nobody is left on a finished form that looks as if it were still in progress.
+      // (A slow clean-up is waited for, but never for long.)
+      await Promise.all([wait(REDIRECT_AFTER_SUBMIT_MS), Promise.race([cleanup, wait(CLEANUP_WAIT_MS)])]);
+      goToDashboard();
     } catch (err) {
       setSubmitStatus("error", "Could not submit the inspection. Check your connection and try again.");
       console.error("QA checklist submission failed:", err);
       btnSubmit.disabled = false;
       btnSubmit.textContent = "Submit inspection";
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // DISCARD INSPECTION — throws away everything entered and the saved draft too.
+  // Always asks first (the safe answer, "Keep working", is the default), unless
+  // nothing has been entered yet, when there is nothing to lose.
+  // ---------------------------------------------------------------------
+  const btnDiscard = document.getElementById("btn-discard");
+  const discardModal = document.getElementById("discard-modal");
+  const discardConfirm = document.getElementById("discard-modal-confirm");
+  const discardCancel = document.getElementById("discard-modal-cancel");
+  const discardError = document.getElementById("discard-modal-error");
+  let discardBusy = false;
+
+  function hasAnyEntry() {
+    const anySerial = serialValues.some((v) => v && v.trim());
+    const anyComment = kioskComments.some((v) => v && v.trim());
+    const anyAnswer = kioskAnswers.some((k) => k && SECTION_KEYS.some((step) => (k[step] || []).some((v) => v !== null)));
+    return anySerial || anyComment || anyAnswer;
+  }
+
+  function openDiscardModal() {
+    discardError.classList.add("hidden");
+    discardConfirm.textContent = "Yes, discard";
+    discardConfirm.disabled = false;
+    discardCancel.disabled = false;
+    discardModal.classList.remove("hidden");
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    discardCancel.focus(); // "Keep working" is the default — Enter never discards by accident
+  }
+
+  function closeDiscardModal() {
+    if (discardBusy) return;
+    discardModal.classList.add("hidden");
+    btnDiscard.focus({ preventScroll: true });
+  }
+
+  async function runDiscard() {
+    discardBusy = true;
+    btnDiscard.disabled = true;
+    btnSubmit.disabled = true;
+    discardConfirm.disabled = true;
+    discardCancel.disabled = true;
+    discardConfirm.textContent = "Discarding…";
+    discardError.classList.add("hidden");
+
+    const ok = await discardDraft();
+    if (ok) {
+      pageIsFinished = true;
+      goToDashboard();
+      return;
+    }
+    // The server could not be reached: nothing was deleted and saving carries on.
+    discardBusy = false;
+    btnDiscard.disabled = false;
+    btnSubmit.disabled = false;
+    discardConfirm.disabled = false;
+    discardCancel.disabled = false;
+    discardConfirm.textContent = "Try again";
+    discardError.textContent = "Could not reach the server, so nothing was discarded. Check your connection and try again, or keep working.";
+    discardError.classList.remove("hidden");
+    discardModal.classList.remove("hidden");
+  }
+
+  btnDiscard.addEventListener("click", () => {
+    if (hasAnyEntry()) openDiscardModal();
+    else runDiscard(); // nothing entered: nothing to lose, no question needed
+  });
+  discardCancel.addEventListener("click", closeDiscardModal);
+  discardConfirm.addEventListener("click", runDiscard);
+  // Escape closes it (wherever the focus is); Tab stays inside the window.
+  document.addEventListener("keydown", (e) => {
+    if (discardModal.classList.contains("hidden")) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeDiscardModal();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      const buttons = [discardCancel, discardConfirm].filter((b) => !b.disabled);
+      if (buttons.length === 0) return;
+      const i = buttons.indexOf(document.activeElement);
+      buttons[(i + (e.shiftKey ? buttons.length - 1 : 1)) % buttons.length].focus();
     }
   });
 
