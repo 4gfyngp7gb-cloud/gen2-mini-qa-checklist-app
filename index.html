@@ -273,19 +273,43 @@
     };
   }
 
+  // One row per kiosk. A kiosk that was QA'd more than once keeps ONE row: the
+  // table shows its latest QA (and who did it). Every earlier QA stays in the
+  // Sheet and can be opened from the Details window ("QA history"). Each
+  // submission gets __runs: all QAs of that serial, oldest first.
+  function groupBySerial(list) {
+    const bySerial = new Map();
+    list.forEach((s) => {
+      const key = (s.serial || "").trim().toUpperCase();
+      if (!bySerial.has(key)) bySerial.set(key, []);
+      bySerial.get(key).push(s);
+    });
+    const groups = [];
+    bySerial.forEach((runs) => {
+      runs.sort((a, b) => {
+        if (a.inspectionDate !== b.inspectionDate) return a.inspectionDate < b.inspectionDate ? -1 : 1;
+        return (a.__order || 0) - (b.__order || 0); // same day: the one submitted later is the later QA
+      });
+      runs.forEach((r) => { r.__runs = runs; });
+      groups.push(runs);
+    });
+    return groups;
+  }
+
+  // The filters look at each kiosk as it stands now (its latest QA) — except
+  // the technician filter, which matches anyone who QA'd that kiosk.
   function applyFilters(submissions, f) {
-    return submissions
-      .filter((s) => {
-        if (f.technician && s.technician !== f.technician) return false;
-        if (f.serial && !(s.serial || "").toUpperCase().includes(f.serial)) return false;
-        if (f.from && s.inspectionDate < f.from) return false;
-        if (f.to && s.inspectionDate > f.to) return false;
-        if (f.onlyFails) {
-          const { fail } = countResults(s);
-          if (fail === 0) return false;
-        }
+    return groupBySerial(submissions)
+      .filter((runs) => {
+        const latest = runs[runs.length - 1];
+        if (f.technician && !runs.some((r) => r.technician === f.technician)) return false;
+        if (f.serial && !(latest.serial || "").toUpperCase().includes(f.serial)) return false;
+        if (f.from && latest.inspectionDate < f.from) return false;
+        if (f.to && latest.inspectionDate > f.to) return false;
+        if (f.onlyFails && countResults(latest).fail === 0) return false;
         return true;
       })
+      .map((runs) => runs[runs.length - 1])
       .sort((a, b) => {
         if (a.inspectionDate !== b.inspectionDate) {
           return a.inspectionDate < b.inspectionDate ? 1 : -1; // newest date first
@@ -531,6 +555,14 @@
     </span>`;
   }
 
+  // Under the technician: who did the very first QA and how many QAs this kiosk has had.
+  function runsNoteHtml(s) {
+    const runs = s.__runs || [];
+    if (runs.length < 2) return "";
+    const first = runs[0].technician || "—";
+    return `<div class="text-[11px] leading-tight text-graphite-500" title="Who did the first QA of this kiosk, and how many QAs it has had">first: ${escapeHtml(first)} · ${runs.length} QAs</div>`;
+  }
+
   function renderTable(filtered) {
     const tbody = document.getElementById("table-body");
     tbody.innerHTML = filtered
@@ -539,7 +571,7 @@
         return `
           <tr>
             <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
-            <td>${escapeHtml(s.technician)}</td>
+            <td>${escapeHtml(s.technician)}${runsNoteHtml(s)}</td>
             <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[10px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
@@ -650,8 +682,43 @@
     return `<div class="rounded-md border px-3 py-2 text-sm ${ok ? "border-leaf-500/60 bg-leaf-500/10 text-leaf-500" : "border-fail/60 bg-fail/10 text-fail"}">${escapeHtml(detailMessage.text)}</div>`;
   }
 
+  function runSummary(r) {
+    const { pass, fail } = countResults(r);
+    const time = r.durationSec !== null && r.durationSec !== undefined ? ` · ${formatDuration(r.durationSec)}` : "";
+    return `${escapeHtml(r.inspectionDate)} · ${escapeHtml(r.technician || "—")} · Pass ${pass} / Fail ${fail}${time}`;
+  }
+
+  // All QAs of this kiosk, newest first, each one openable. Shown when there is more than one.
+  function renderRunHistory(sub) {
+    const runs = sub.__runs || [];
+    if (runs.length < 2) return "";
+    const latestIdx = runs.length - 1;
+    let html = "";
+    if (runs[latestIdx] !== sub) {
+      html += `<div class="flex items-center justify-between gap-3 rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-sm text-graphite-300">
+        <span>You are viewing an earlier QA of this kiosk.</span>
+        <button type="button" data-view-run="${latestIdx}" class="flex-shrink-0 text-leaf-500 underline hover:text-leaf-600">Back to the latest</button>
+      </div>`;
+    }
+    const lines = runs
+      .map((r, i) => ({ r, i }))
+      .reverse()
+      .map(({ r, i }) => {
+        const tag = i === latestIdx ? "latest" : i === 0 ? "first" : "";
+        const current = r === sub;
+        return `<div class="flex items-center justify-between gap-3 py-1.5 text-sm">
+          <span class="${current ? "text-graphite-100" : "text-graphite-300"}">${runSummary(r)}${tag ? ` <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 text-[10px] text-graphite-300">${tag}</span>` : ""}</span>
+          ${current ? '<span class="flex-shrink-0 text-xs text-graphite-500">viewing</span>' : `<button type="button" data-view-run="${i}" class="flex-shrink-0 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">View</button>`}
+        </div>`;
+      })
+      .join("");
+    html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">QA history · ${runs.length} QAs</p>${lines}</div>`;
+    return html;
+  }
+
   function renderDetailsBody(sub) {
     let html = messageHtml();
+    html += renderRunHistory(sub);
     // The edit history goes first: it is the key trace, and the list of checks below is long.
     if (sub.edits && sub.edits.length) {
       const lines = sub.edits
@@ -886,6 +953,18 @@
   });
 
   document.getElementById("detail-body").addEventListener("click", (e) => {
+    const viewRun = e.target.closest("[data-view-run]");
+    if (viewRun && !editBusy && currentDetail && currentDetail.__runs) {
+      const target = currentDetail.__runs[Number(viewRun.dataset.viewRun)];
+      if (target) {
+        currentDetail = target;
+        detailTab = "details";
+        editChanges = {};
+        detailMessage = null;
+        renderDetail();
+      }
+      return;
+    }
     const toggle = e.target.closest("[data-edit-key]");
     if (toggle && !editBusy && currentDetail) {
       const key = toggle.dataset.editKey;
@@ -937,7 +1016,7 @@
     const f = getFilters();
     currentFiltered = applyFilters(allSubmissions, f);
     document.getElementById("filter-count").textContent =
-      `${currentFiltered.length} of ${allSubmissions.length} inspections`;
+      `${currentFiltered.length} of ${groupBySerial(allSubmissions).length} kiosks`;
     renderTable(currentFiltered);
   }
 
