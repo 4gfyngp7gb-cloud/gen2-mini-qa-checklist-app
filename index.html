@@ -93,9 +93,13 @@
     <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
 
     <!-- Stats — always the full totals, unaffected by filters -->
-    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-3">
+    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-4">
       <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400">Inspections</p>
+        <p class="text-xs text-graphite-400" title="Different kiosks that have been QA'd. A kiosk QA'd more than once counts once.">Kiosks QA'd</p>
+        <p id="stat-kiosks" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
+      </div>
+      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
+        <p class="text-xs text-graphite-400" title="Every QA that was done. A kiosk QA'd twice counts as two.">Inspections</p>
         <p id="stat-total" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
       </div>
       <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
@@ -176,7 +180,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-05.3</p>
+    <p class="mt-8 text-center text-[11px] text-graphite-600">Version 2026-10-07.2</p>
   </div>
 
   <!-- Detail modal -->
@@ -328,6 +332,9 @@
     const total = totalPass + totalFail;
     const passRate = total > 0 ? Math.round((totalPass / total) * 100) : 0;
 
+    // Different kiosks that have been QA'd: a kiosk QA'd twice still counts as one.
+    const kiosks = new Set(data.map((s) => (s.serial || "").trim().toUpperCase()).filter(Boolean));
+    document.getElementById("stat-kiosks").textContent = kiosks.size;
     document.getElementById("stat-total").textContent = data.length;
     document.getElementById("stat-passrate").textContent = passRate + "%";
     document.getElementById("stat-fails").textContent = totalFail;
