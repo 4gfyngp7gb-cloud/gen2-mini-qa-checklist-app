@@ -87,6 +87,7 @@
   .modal.open { display: flex; }
   /* rows of inspections that are still being done ("currently in progress") */
   table.qa-table tbody tr.in-progress td:first-child { box-shadow: inset 3px 0 0 rgb(var(--leaf-500) / 0.65); }
+  table.qa-table td.progress-actions { vertical-align: middle; }
   .progress-dot {
     display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px;
     background: rgb(var(--leaf-500)); animation: qa-pulse 1.6s ease-in-out infinite;
@@ -227,7 +228,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.5</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.6</p>
   </div>
 
   <!-- Detail modal -->
@@ -481,7 +482,7 @@
   // They are shown as "currently in progress" rows at the top of the table, one row
   // per kiosk. Once the inspection is submitted, the row turns into the usual one.
   // ---------------------------------------------------------------------
-  let pendingDelete = null;       // { id, serial }: the row whose "discard?" question is open
+  let pendingDelete = null;       // { id }: the inspection whose "discard?" question is open
   let dataLoaded = false;         // the first load of the submissions has finished
   let lastDrafts = [];            // the unfinished inspections as last fetched from the server
   let currentProgress = [];       // the in-progress rows currently on screen (after the filters)
@@ -552,39 +553,49 @@
 
   const attr = (v) => String(v).replace(/"/g, "&quot;");
 
-  function progressRowHtml({ draft, serial, total }) {
+  // One row per kiosk. The actions (Resume / ✕) belong to the whole inspection, so they appear ONCE,
+  // in a cell that spans all the kiosk rows of that inspection: `first` marks the first row of an
+  // inspection, `span` is how many of its rows are on screen (fewer when a filter hides some).
+  function progressRowHtml({ draft, serial, total, first, span }) {
     const id = attr(draft.id);
+    const kiosksNote = total > 1 ? ` (${total} kiosks)` : "";
     const lead = `
       <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
       <td>${escapeHtml(draft.technician || "")}</td>
       <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>`;
+    const asking = pendingDelete && pendingDelete.id === draft.id;
 
-    if (pendingDelete && pendingDelete.id === draft.id && pendingDelete.serial === serial) {
-      return `
-        <tr class="in-progress" data-progress-draft="${id}">${lead}
-          <td colspan="3" class="text-graphite-100">Discard this whole inspection${total > 1 ? ` (all ${total} kiosks)` : ""}? This can't be undone.</td>
-          <td class="whitespace-nowrap">
-            <button type="button" data-confirm-delete-draft="${id}" class="rounded-md bg-fail px-2.5 py-1 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
-            <button type="button" data-cancel-delete-draft="1" class="ml-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
-          </td>
-        </tr>`;
-    }
-    const saved = savedText(draft.savedAt);
-    const hint = looksAlreadySubmitted(draft, serial)
-      ? `<span class="mt-1 block text-xs text-graphite-400">Already in the list for this technician and date. If it's finished, discard it with ✕.</span>`
-      : "";
-    return `
-      <tr class="in-progress" data-progress-draft="${id}">${lead}
+    let status;
+    if (asking && first) {
+      status = `<td colspan="3" class="text-graphite-100">Discard this whole inspection${total > 1 ? ` (all ${total} kiosks)` : ""}? This can't be undone.</td>`;
+    } else {
+      const saved = savedText(draft.savedAt);
+      const hint = looksAlreadySubmitted(draft, serial)
+        ? `<span class="mt-1 block text-xs text-graphite-400">Already in the list for this technician and date. If it's finished, discard it with ✕.</span>`
+        : "";
+      status = `
         <td colspan="3">
           <span class="inline-flex items-center gap-2 text-graphite-200"><span class="progress-dot" aria-hidden="true"></span>Currently in progress</span>
           <span class="ml-2 text-graphite-500">${escapeHtml(saved)}${total > 1 ? ` · ${total} kiosks together` : ""}</span>
           ${hint}
-        </td>
-        <td class="whitespace-nowrap">
-          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" class="rounded-md bg-leaf-500 px-2.5 py-1 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
-          <button type="button" data-delete-draft="${id}" data-delete-serial="${attr(serial)}" aria-label="Discard this inspection" class="ml-1 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 transition hover:border-fail hover:text-failtext">✕</button>
-        </td>
-      </tr>`;
+        </td>`;
+    }
+
+    let actions = "";
+    if (first && asking) {
+      actions = `
+        <td rowspan="${span}" class="progress-actions whitespace-nowrap">
+          <button type="button" data-confirm-delete-draft="${id}" class="rounded-md bg-fail px-2.5 py-1 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
+          <button type="button" data-cancel-delete-draft="1" class="ml-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
+        </td>`;
+    } else if (first) {
+      actions = `
+        <td rowspan="${span}" class="progress-actions whitespace-nowrap">
+          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-2.5 py-1 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
+          <button type="button" data-delete-draft="${id}" aria-label="Discard this whole inspection${kiosksNote}" class="ml-1 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 transition hover:border-fail hover:text-failtext">✕</button>
+        </td>`;
+    }
+    return `<tr class="in-progress" data-progress-draft="${id}">${lead}${status}${actions}</tr>`;
   }
 
   // Kiosks inspected together are submitted in one go, so they sit on
@@ -648,7 +659,14 @@
 
   function renderTable(filtered, progress) {
     const tbody = document.getElementById("table-body");
-    const progressHtml = progress.map(progressRowHtml).join("");
+    const progressHtml = progress
+      .map((r, i) => {
+        const first = i === 0 || progress[i - 1].draft.id !== r.draft.id;
+        let span = 0;
+        if (first) while (progress[i + span] && progress[i + span].draft.id === r.draft.id) span++;
+        return progressRowHtml({ ...r, first, span });
+      })
+      .join("");
     const doneHtml = filtered
       .map((s, i) => {
         const { pass, fail } = countResults(s);
@@ -1117,7 +1135,7 @@
     const cancelBtn = e.target.closest("[data-cancel-delete-draft]");
 
     if (deleteBtn) {
-      pendingDelete = { id: deleteBtn.dataset.deleteDraft, serial: deleteBtn.dataset.deleteSerial };
+      pendingDelete = { id: deleteBtn.dataset.deleteDraft };
       refresh();
     } else if (confirmBtn) {
       const id = confirmBtn.dataset.confirmDeleteDraft;
