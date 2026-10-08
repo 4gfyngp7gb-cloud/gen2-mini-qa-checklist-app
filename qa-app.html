@@ -407,7 +407,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.9</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-08.1</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -453,7 +453,6 @@
       <!-- Nav -->
       <footer id="wizard-nav" class="mt-5 flex items-center justify-end gap-3">
         <div id="bottom-status" class="mr-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-sm text-graphite-300">
-          <span id="bottom-progress" class="font-mono"></span>
           <span class="inline-flex items-center gap-1 font-mono text-graphite-400" title="Time spent on this QA so far">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
             <span id="bottom-time">0:00</span>
@@ -1549,10 +1548,6 @@
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     document.getElementById("progress-fill").style.width = pct + "%";
     document.getElementById("progress-track").setAttribute("aria-valuenow", String(pct));
-
-    document.getElementById("bottom-progress").textContent = kiosks === 0
-      ? "No kiosk yet"
-      : `${done} / ${total} checks` + (done < total ? ` · ${total - done} left` : " · all answered");
 
     updateBarClearance();
     updateCurrentSection();
