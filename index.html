@@ -141,22 +141,37 @@
     <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
 
     <!-- Stats — always the full totals, unaffected by filters -->
-    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-4">
-      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400" title="Different kiosks that have been QA'd. A kiosk QA'd more than once counts once.">Kiosks QA'd</p>
-        <p id="stat-kiosks" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
+    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-5">
+      <!-- Left: the number that matters most — kiosks that have been shipped (ticked in the table below) -->
+      <div class="flex flex-col justify-between rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 sm:col-span-2">
+        <p class="text-sm font-medium text-graphite-300" title="Kiosks ticked as shipped in the table below. A kiosk QA'd more than once counts once.">Kiosks shipped</p>
+        <p id="stat-shipped" class="my-3 text-7xl font-semibold leading-none text-leaf-500">–</p>
+        <div>
+          <p id="stat-shipped-sub" class="text-sm text-graphite-300"></p>
+          <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-graphite-800">
+            <div id="stat-shipped-bar" class="h-full rounded-full bg-leaf-500 transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <p id="ship-error" class="mt-2 hidden text-sm text-failtext" role="alert"></p>
+        </div>
       </div>
-      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400" title="Every QA that was done. A kiosk QA'd twice counts as two.">Inspections</p>
-        <p id="stat-total" class="mt-1 text-2xl font-semibold text-graphite-100">0</p>
-      </div>
-      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400">Pass rate</p>
-        <p id="stat-passrate" class="mt-1 text-2xl font-semibold text-leaf-500">0%</p>
-      </div>
-      <div class="rounded-lg border border-graphite-700 bg-graphite-900/80 p-4">
-        <p class="text-xs text-graphite-400">Total checks failed</p>
-        <p id="stat-fails" class="mt-1 text-2xl font-semibold text-failtext">0</p>
+      <!-- Right: the other four, one under the other -->
+      <div class="divide-y divide-graphite-700 rounded-lg border border-graphite-700 bg-graphite-900/80 sm:col-span-3">
+        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
+          <p class="text-sm text-graphite-300" title="Different kiosks that have been QA'd. A kiosk QA'd more than once counts once.">Kiosks QA'd</p>
+          <p id="stat-kiosks" class="text-2xl font-semibold text-graphite-100">0</p>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
+          <p class="text-sm text-graphite-300" title="Every QA that was done. A kiosk QA'd twice counts as two.">Inspections</p>
+          <p id="stat-total" class="text-2xl font-semibold text-graphite-100">0</p>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
+          <p class="text-sm text-graphite-300">Pass rate</p>
+          <p id="stat-passrate" class="text-2xl font-semibold text-leaf-500">0%</p>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
+          <p class="text-sm text-graphite-300">Total checks failed</p>
+          <p id="stat-fails" class="text-2xl font-semibold text-failtext">0</p>
+        </div>
       </div>
     </div>
 
@@ -211,6 +226,7 @@
       <table class="qa-table">
         <thead>
           <tr>
+            <th title="Tick when the kiosk has been sent out">Shipped</th>
             <th>Date</th>
             <th>Technician</th>
             <th>Serial</th>
@@ -228,7 +244,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-07.6</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-08.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -391,6 +407,7 @@
     document.getElementById("stat-total").textContent = data.length;
     document.getElementById("stat-passrate").textContent = passRate + "%";
     document.getElementById("stat-fails").textContent = totalFail;
+    renderShippedStat();
   }
 
   function renderTechnicians(data) {
@@ -488,6 +505,120 @@
   let currentProgress = [];       // the in-progress rows currently on screen (after the filters)
   const justFinished = new Set(); // serials whose row has just turned from "in progress" into a finished one
 
+  // ---------------------------------------------------------------------
+  // SHIPPING — a checkbox per kiosk ("already sent out"). The marks live in the Sheet (the
+  // "Shipped" tab), so everyone sees the same; the number at the top counts them.
+  // ---------------------------------------------------------------------
+  let shippedMap = new Map();     // SERIAL -> { by, at } for every kiosk marked as shipped
+  let shipState = "loading";      // "loading" | "ready" | "unsupported" (older Apps Script) | "error"
+  const shippedBusy = new Set();  // serials whose change is on its way to the server right now
+  let shipErrorTimer = null;
+
+  const serialKey = (serial) => String(serial || "").trim().toUpperCase();
+
+  function getRememberedName() {
+    try { return localStorage.getItem(EDITOR_KEY) || ""; } catch (e) { return ""; }
+  }
+
+  function shipTitle(key) {
+    if (shipState === "unsupported") return "Shipping marks need the updated Apps Script (Deploy a new version).";
+    if (shipState === "loading") return "Loading…";
+    if (shipState === "error") return "Could not load the shipping marks. Retrying…";
+    if (shippedBusy.has(key)) return "Saving…";
+    const m = shippedMap.get(key);
+    if (!m) return "Mark as shipped";
+    const when = m.at ? new Date(m.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+    return "Shipped" + (when ? " " + when : "") + (m.by ? " · " + m.by : "");
+  }
+
+  function shipBoxHtml(serial) {
+    const key = serialKey(serial);
+    if (!key) return "";
+    const disabled = shipState !== "ready" || shippedBusy.has(key);
+    return `<input type="checkbox" data-ship-serial="${attr(key)}" class="h-[18px] w-[18px] cursor-pointer accent-leaf-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Shipped: ${attr(key)}" title="${attr(shipTitle(key))}"${shippedMap.has(key) ? " checked" : ""}${disabled ? " disabled" : ""}>`;
+  }
+
+  // How many of the QA'd kiosks are shipped, and the line under the big number.
+  function renderShippedStat() {
+    const kiosks = new Set(allSubmissions.map((s) => serialKey(s.serial)).filter(Boolean));
+    let shipped = 0;
+    kiosks.forEach((k) => { if (shippedMap.has(k)) shipped++; });
+    const numEl = document.getElementById("stat-shipped");
+    const subEl = document.getElementById("stat-shipped-sub");
+    const barEl = document.getElementById("stat-shipped-bar");
+    if (shipState === "ready") {
+      numEl.textContent = shipped;
+      subEl.textContent = `of ${kiosks.size} QA'd kiosks · ${kiosks.size - shipped} still to ship`;
+      barEl.style.width = (kiosks.size ? Math.round((shipped / kiosks.size) * 100) : 0) + "%";
+    } else {
+      numEl.textContent = shipState === "loading" ? "…" : "–";
+      subEl.textContent = shipState === "unsupported" ? "Update the Apps Script to track shipping"
+        : shipState === "error" ? "Couldn't load the shipping status — retrying" : "Loading…";
+      barEl.style.width = "0%";
+    }
+  }
+
+  function showShipError(message) {
+    const el = document.getElementById("ship-error");
+    el.textContent = message;
+    el.classList.remove("hidden");
+    clearTimeout(shipErrorTimer);
+    shipErrorTimer = setTimeout(() => el.classList.add("hidden"), 9000);
+  }
+
+  // The server's list is the truth — except for a kiosk whose change is still on its way
+  // (that one keeps what the person just did until the server has answered).
+  function applyShippedList(list) {
+    const next = new Map();
+    list.forEach((x) => { if (x && x.serial) next.set(serialKey(x.serial), { by: x.by || "", at: x.at || "" }); });
+    shippedBusy.forEach((k) => {
+      if (shippedMap.has(k)) next.set(k, shippedMap.get(k)); else next.delete(k);
+    });
+    shippedMap = next;
+  }
+
+  // Ticking / un-ticking a box. The change shows at once; if the server cannot save it, it is
+  // undone and the person is told.
+  async function toggleShipped(serial, wantShipped) {
+    const key = serialKey(serial);
+    if (!key || shipState !== "ready" || shippedBusy.has(key)) return;
+    const before = shippedMap.get(key);
+    shippedBusy.add(key);
+    if (wantShipped) shippedMap.set(key, { by: getRememberedName(), at: new Date().toISOString() });
+    else shippedMap.delete(key);
+    document.getElementById("ship-error").classList.add("hidden");
+    renderShippedStat();
+    refresh();
+    focusShipBox(key);
+
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "setShipped", serial: key, shipped: wantShipped, by: getRememberedName() }),
+      });
+      const data = await res.json();
+      if (!data || data.ok !== true || !Array.isArray(data.shipped)) throw new Error((data && data.error) || "not accepted");
+      shippedBusy.delete(key);
+      applyShippedList(data.shipped);
+    } catch (err) {
+      console.error("Could not save the shipped mark:", err);
+      shippedBusy.delete(key);
+      if (before) shippedMap.set(key, before); else shippedMap.delete(key);
+      showShipError(`Couldn't save the shipped mark for ${key}, so nothing was changed. Check the connection and try again.`);
+    }
+    lastLiveSignature = liveSignature(); // what is on screen IS the current state: the next refresh has nothing to redraw
+    renderShippedStat();
+    refresh();
+    focusShipBox(key);
+  }
+
+  // The table is redrawn after a change; keep the keyboard where it was.
+  function focusShipBox(key) {
+    const box = Array.from(document.querySelectorAll("input[data-ship-serial]")).find((b) => b.dataset.shipSerial === key);
+    if (box && !box.disabled) box.focus({ preventScroll: true });
+  }
+
   async function loadDrafts() {
     try {
       const res = await fetch(`${WEBHOOK_URL}?action=listDrafts`);
@@ -507,6 +638,25 @@
     }).catch((err) => console.error("Could not delete this draft:", err));
   }
 
+  // Re-reads what changes during the day in ONE request: the unfinished inspections and the
+  // shipped kiosks. An Apps Script from before shipping existed does not know this request;
+  // then only the drafts are read and the shipping marks are switched off (not broken).
+  // Returns null when the server could not be reached at all.
+  async function loadLive() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listLive`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.drafts) && Array.isArray(data.shipped)) {
+        return { drafts: data.drafts, shipped: data.shipped, supported: true };
+      }
+    } catch (err) {
+      console.error("Could not load the live data:", err);
+      return null;
+    }
+    const drafts = await loadDrafts(); // the server answered but does not know 'listLive'
+    return drafts === null ? null : { drafts, shipped: [], supported: false };
+  }
+
   // True when this kiosk is already in the list for the same technician and date — so the
   // draft is most likely the leftover of a QA that was finished. Only a hint: nothing is
   // ever hidden or deleted because of it.
@@ -515,13 +665,33 @@
     return allSubmissions.some((s) => s.serial === serial && s.technician === (draft.technician || "") && s.inspectionDate === draft.dateValue);
   }
 
-  async function refreshDraftList() {
-    const drafts = await loadDrafts();
-    if (drafts === null) return; // couldn't reach the server: keep what is on screen
-    lastDrafts = drafts
+  let lastLiveSignature = "";
+
+  // A fingerprint of what the screen shows from the live data (unfinished QAs + shipped marks).
+  function liveSignature() {
+    return JSON.stringify([
+      lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.dateValue, d.serialValues]),
+      Array.from(shippedMap.entries()), shipState,
+    ]);
+  }
+
+  async function refreshLive() {
+    const live = await loadLive();
+    if (live === null) {
+      // couldn't reach the server: keep what is on screen (but say so if shipping never loaded)
+      if (shipState === "loading") { shipState = "error"; if (dataLoaded) { renderShippedStat(); refresh(); } }
+      return;
+    }
+    lastDrafts = live.drafts
       .filter((d) => (d.serialValues || []).some((v) => v))
       .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-    if (dataLoaded) refresh();
+    if (live.supported) { applyShippedList(live.shipped); shipState = "ready"; } else { shipState = "unsupported"; }
+
+    // Redraw only when something changed: a redraw every half minute could swallow a click.
+    const signature = liveSignature();
+    if (signature === lastLiveSignature && dataLoaded) return;
+    lastLiveSignature = signature;
+    if (dataLoaded) { renderShippedStat(); refresh(); }
   }
 
   // one entry per kiosk of every unfinished inspection, filtered like the finished ones
@@ -560,6 +730,7 @@
     const id = attr(draft.id);
     const kiosksNote = total > 1 ? ` (${total} kiosks)` : "";
     const lead = `
+      <td></td>
       <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
       <td>${escapeHtml(draft.technician || "")}</td>
       <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>`;
@@ -672,6 +843,7 @@
         const { pass, fail } = countResults(s);
         return `
           <tr${justFinished.has((s.serial || "").toUpperCase()) ? ' class="just-finished"' : ""}>
+            <td>${shipBoxHtml(s.serial)}</td>
             <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
             <td>${escapeHtml(s.technician)}${runsNoteHtml(s)}</td>
             <td class="font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
@@ -686,7 +858,9 @@
         `;
       })
       .join("");
+    const focusedShip = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.shipSerial : null;
     tbody.innerHTML = progressHtml + doneHtml; // unfinished ones on top, then the finished ones
+    if (focusedShip) focusShipBox(focusedShip); // a redraw must not drop the keyboard focus
 
     const any = filtered.length + progress.length > 0;
     document.getElementById("empty-state").classList.toggle("hidden", any);
@@ -1127,6 +1301,11 @@
     renderTable(currentFiltered, currentProgress);
   }
 
+  document.getElementById("table-body").addEventListener("change", (e) => {
+    const box = e.target.closest("input[data-ship-serial]");
+    if (box) toggleShipped(box.dataset.shipSerial, box.checked);
+  });
+
   document.getElementById("table-body").addEventListener("click", (e) => {
     const detailBtn = e.target.closest("[data-detail-idx]");
     const reqaBtn = e.target.closest("[data-reqa-idx]");
@@ -1142,7 +1321,7 @@
       pendingDelete = null;
       lastDrafts = lastDrafts.filter((d) => d.id !== id); // gone from the screen at once ...
       refresh();
-      deleteDraft(id).then(refreshDraftList);              // ... and the list is re-read once the server has deleted it
+      deleteDraft(id).then(refreshLive);              // ... and the list is re-read once the server has deleted it
     } else if (cancelBtn) {
       pendingDelete = null;
       refresh();
@@ -1260,7 +1439,7 @@
     try {
       const idsBefore = new Set(lastDrafts.map((d) => d.id));
       const serialsBefore = new Set(lastDrafts.flatMap((d) => (d.serialValues || []).filter(Boolean).map((v) => v.toUpperCase())));
-      await refreshDraftList();
+      await refreshLive();
       const someGone = [...idsBefore].some((id) => !lastDrafts.some((d) => d.id === id));
       if (someGone || Date.now() - lastSubmissionsLoad > SUBMISSION_POLL_MS) await reloadSubmissionsQuietly(serialsBefore);
     } finally {
@@ -1274,7 +1453,7 @@
   });
 
   (async function init() {
-    refreshDraftList(); // independent of submissions; don't block on it
+    refreshLive();      // drafts + shipped marks; independent of submissions, so don't block on it
     loadPeople();       // names for the "Edited by" choice
 
     const submissions = await loadSubmissions();
