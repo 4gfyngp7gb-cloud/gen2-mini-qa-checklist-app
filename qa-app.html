@@ -100,10 +100,6 @@
     100% { box-shadow: 0 0 0 4px rgb(var(--leaf-500) / 0); }
   }
 
-  /* while the clock is paused the form (and the progress bar) is dimmed and cannot be used; the
-     bottom bar stays, with the Resume button */
-  #page.is-paused main, #page.is-paused #progress-bar { opacity: 0.45; pointer-events: none; user-select: none; }
-
   .view { display: none; }
   .view.active { display: block; }
 
@@ -417,7 +413,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.2</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -469,20 +465,15 @@
           </span>
           <button id="btn-pause" type="button"
             class="inline-flex items-center gap-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500"
-            title="Stop the clock, e.g. if something urgent comes up. Press Resume to carry on where you stopped.">
+            title="Save this QA and go back to the dashboard (e.g. if something urgent comes up). It waits there under 'Unfinished inspections': press Resume to carry on exactly where you stopped, with the time continuing from here.">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
             Pause
           </button>
-          <span id="pause-badge" role="status" class="hidden rounded-md border border-graphite-400 px-2 py-0.5 text-xs font-semibold text-graphite-100">Paused — the clock is stopped</span>
           <span id="save-status" class="text-graphite-400" aria-live="polite"></span>
         </div>
         <button id="btn-discard" type="button"
           class="flex-shrink-0 whitespace-nowrap rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-300 transition hover:border-fail hover:text-failtext disabled:cursor-not-allowed disabled:opacity-60">
           Discard inspection
-        </button>
-        <button id="btn-resume" type="button"
-          class="hidden flex-shrink-0 whitespace-nowrap rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
-          <svg class="mr-1.5 inline h-4 w-4 align-text-bottom" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Resume
         </button>
         <button id="btn-submit" type="button"
           class="flex-shrink-0 whitespace-nowrap rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-60">
@@ -1223,8 +1214,7 @@
 
   // True while the screw popup or the discard confirmation is on screen.
   function modalIsOpen() {
-    // (a paused form counts too: it has no keyboard either)
-    return paused || !screwModal.classList.contains("hidden") || !document.getElementById("discard-modal").classList.contains("hidden");
+    return !screwModal.classList.contains("hidden") || !document.getElementById("discard-modal").classList.contains("hidden");
   }
 
   function openScrewModal(step) {
@@ -1317,7 +1307,6 @@
   }
 
   function setCell(k, step, idx, value) {
-    if (paused) return; // the clock is stopped: the form is switched off
     if (step === "5" && isHousingLocked()) return;
     kioskAnswers[k][step][idx] = value;
     const cell = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${idx}"]`);
@@ -1967,6 +1956,7 @@
   // would show a dead form; start over instead.
   window.addEventListener("pageshow", (e) => {
     if (e.persisted && pageIsFinished) window.location.reload();
+    else if (e.persisted && currentDraftId) { draftStatus = "active"; saveDraft(); } // brought back from the browser's cache: working again
   });
 
   const btnBack = document.getElementById("btn-back");
@@ -1975,8 +1965,7 @@
   const postSubmitActions = document.getElementById("post-submit-actions");
 
   btnBack.addEventListener("click", () => {
-    flushDraftNow(); // don't lose the last answers on the way out
-    window.location.href = "index.html";
+    leaveAsPaused(); // leaving a QA that is not finished = putting it aside (saved, with the time so far)
   });
 
   // ---------------------------------------------------------------------
@@ -2031,57 +2020,57 @@
   // ---------------------------------------------------------------------
   let elapsedBeforeMs = 0;          // time already used: earlier sittings of this QA, and earlier stretches before a pause
   let sessionStartMs = Date.now();  // when the clock last (re)started running
-  let paused = false;               // true while the clock is stopped (the "Pause" button)
-  let pausedFocus = null;           // what had the keyboard focus when it was paused
-  const pageTitle = document.title;
 
-  // While paused nothing is added: the time so far is already in elapsedBeforeMs.
+  // The time used so far: earlier sittings (carried in the draft) plus this one. It only counts while the
+  // form is open: stopping with Pause (or Home) saves the time so far, and Resume carries on from there.
   function currentElapsedSec() {
-    const running = paused ? 0 : Date.now() - sessionStartMs;
-    return Math.max(0, Math.round((elapsedBeforeMs + running) / 1000));
+    return Math.max(0, Math.round((elapsedBeforeMs + (Date.now() - sessionStartMs)) / 1000));
   }
 
   function restartQaTimer(previousSec) {
     elapsedBeforeMs = Math.max(0, Number(previousSec) || 0) * 1000;
     sessionStartMs = Date.now();
-    if (paused) { paused = false; syncPauseUi(); } // a freshly opened/resumed QA always starts running
   }
 
-  // Stop the clock (e.g. something urgent came up) and carry on later exactly where it stopped.
-  // The form is switched off while it is stopped, so no untimed work slips in.
-  function setPaused(wantPaused) {
-    if (wantPaused === paused) return;
-    if (wantPaused) {
-      pausedFocus = document.activeElement;
-      elapsedBeforeMs += Date.now() - sessionStartMs; // bank the time so far
-      paused = true;
-      syncPauseUi();
-      if (hasAnyEntry()) saveDraft();                 // the saved copy then holds the time up to the pause
-      document.getElementById("btn-resume").focus();
-    } else {
-      sessionStartMs = Date.now();                    // the clock runs again from this moment
-      paused = false;
-      syncPauseUi();
-      const back = pausedFocus && document.body.contains(pausedFocus) ? pausedFocus : document.getElementById("btn-pause");
-      try { back.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
-      pausedFocus = null;
+  // PAUSE / HOME: stop here for now. Everything entered is saved with the time so far and a "paused" mark,
+  // then the page returns to the dashboard, where the QA waits under "Unfinished inspections" until someone
+  // presses Resume. If it cannot be saved to the shared list the person stays here and is told (nothing is
+  // lost: the copy on this device is kept).
+  let leaving = false;
+  async function leaveAsPaused() {
+    if (leaving) return;
+    if (!currentDraftId || !hasAnyEntry()) { pageIsFinished = true; goToDashboard(); return; } // nothing entered: nothing to keep
+    const errorEl = document.getElementById("submit-error");
+    if (scriptOutdated) {
+      errorEl.textContent = "This QA can't be put aside while the Google Apps Script is out of date (it could not be saved to the shared list). Deploy its new version and reload this page.";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    leaving = true;
+    errorEl.classList.add("hidden");
+    btnPause.disabled = true; btnPause.lastChild.textContent = " Saving…";
+    btnBack.disabled = true;
+    draftStatus = "paused";
+    clearTimeout(saveDraftTimer); clearTimeout(saveRetryTimer); saveRetryTimer = null;
+    draftSavesPaused = true; // the automatic saves must not race with this final one
+    try {
+      if (saveInFlight && saveInFlightPromise) await Promise.race([saveInFlightPromise, wait(DISCARD_WAIT_MS)]);
+      writeLocalDraftCopy();
+      await sendDraftToServer({ keepalive: true }); // resolves once delivered, rejects without a connection
+      pageIsFinished = true;
+      goToDashboard();
+    } catch (err) {
+      console.error("Could not save this QA before leaving:", err);
+      draftStatus = "active"; draftSavesPaused = false; leaving = false;
+      btnPause.disabled = false; btnPause.lastChild.textContent = " Pause";
+      btnBack.disabled = false;
+      errorEl.textContent = "Couldn't reach the server, so this QA was not put aside. What you entered is kept on this device. Check the connection and try again.";
+      errorEl.classList.remove("hidden");
+      if (saveDirty) saveDraft();
     }
   }
-
-  function syncPauseUi() {
-    document.getElementById("page").classList.toggle("is-paused", paused);
-    document.querySelector("main").toggleAttribute("inert", paused);        // no clicks, no focus, no keyboard
-    document.getElementById("progress-bar").toggleAttribute("inert", paused);
-    document.getElementById("btn-pause").classList.toggle("hidden", paused);
-    document.getElementById("pause-badge").classList.toggle("hidden", !paused);
-    document.getElementById("btn-resume").classList.toggle("hidden", !paused);
-    document.getElementById("btn-submit").classList.toggle("hidden", paused); // there is nothing to submit until it runs again
-    document.getElementById("bottom-time").classList.toggle("font-semibold", paused);
-    document.getElementById("bottom-time").classList.toggle("text-graphite-100", paused);
-    document.title = paused ? "⏸ Paused — " + pageTitle : pageTitle;
-  }
-  document.getElementById("btn-pause").addEventListener("click", () => setPaused(true));
-  document.getElementById("btn-resume").addEventListener("click", () => setPaused(false));
+  const btnPause = document.getElementById("btn-pause");
+  btnPause.addEventListener("click", leaveAsPaused);
 
   function localCacheKey(id) {
     return DRAFTS_KEY + ":" + id;
@@ -2135,10 +2124,20 @@
       savedAt: nextSavedAt(),
       elapsedSec: currentElapsedSec(),
       checklistVersion: CHECKLIST_VERSION, // which edition of the checklist these answers belong to
+      status: draftStatus,                 // "active" while being worked on; "paused" when put aside (Pause / Home)
     };
   }
 
+  let draftStatus = "active";           // becomes "paused" when the person puts the QA aside
+  let lastDraftSendMs = Date.now();     // when a save last went out (the heartbeat below uses it)
+
+  // The copy kept on THIS device (so nothing is lost if the network request fails).
+  function writeLocalDraftCopy() {
+    try { localStorage.setItem(localCacheKey(currentDraftId), JSON.stringify(buildDraftSnapshot())); } catch (e) { /* ignore */ }
+  }
+
   function sendDraftToServer(extra) {
+    lastDraftSendMs = Date.now();
     // no-cors: we only need the request to be delivered, and it also lets the
     // browser keep it going while the page is being closed (keepalive).
     return fetch(WEBHOOK_URL, Object.assign({
@@ -2205,7 +2204,27 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushDraftNow();
   });
-  window.addEventListener("pagehide", flushDraftNow);
+  // Closing the tab or navigating away counts as putting the QA aside (best effort: the browser may cut it short).
+  function flushOnLeave() {
+    if (pageIsFinished || !currentDraftId || draftSavesPaused) return;
+    if (hasAnyEntry() && !scriptOutdated) {
+      draftStatus = "paused";
+      clearTimeout(saveDraftTimer);
+      saveDirty = false;
+      try { sendDraftToServer({ keepalive: true }).catch((err) => console.error("Could not flush the draft:", err)); } catch (err) { saveDirty = true; }
+    } else {
+      flushDraftNow();
+    }
+  }
+  window.addEventListener("pagehide", flushOnLeave);
+
+  // While a QA is open and nothing has been saved for a while, save it again (a "heartbeat"), so the dashboard
+  // can tell a QA that is being worked on from one that was left behind (e.g. a closed laptop).
+  const HEARTBEAT_MS = 100000;
+  setInterval(() => {
+    if (pageIsFinished || leaving || !currentDraftId || draftSavesPaused || scriptOutdated) return;
+    if (Date.now() - lastDraftSendMs >= HEARTBEAT_MS && !saveDirty && hasAnyEntry()) saveDraft(); // (a save that is already waiting will do)
+  }, 30000);
 
   // Fetch the full shared list of unfinished inspections from the server.
   async function loadDrafts() {
@@ -2368,6 +2387,8 @@
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
+    draftStatus = "active";
+    saveDraft(); // tell the dashboard it is being worked on again (it moves from "Unfinished" to "In progress")
   }
 
   // ---------------------------------------------------------------------
@@ -2472,7 +2493,6 @@
   }
 
   btnSubmit.addEventListener("click", async () => {
-    if (paused) return; // resume the clock first
     const errorEl = document.getElementById("submit-error");
     if (scriptOutdated) {
       errorEl.textContent = "The Google Apps Script is out of date, so this can't be submitted yet (the results would be saved under the wrong checks). Deploy its new version, then reload this page.";
