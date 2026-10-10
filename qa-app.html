@@ -100,6 +100,10 @@
     100% { box-shadow: 0 0 0 4px rgb(var(--leaf-500) / 0); }
   }
 
+  /* while the clock is paused the form (and the progress bar) is dimmed and cannot be used; the
+     bottom bar stays, with the Resume button */
+  #page.is-paused main, #page.is-paused #progress-bar { opacity: 0.45; pointer-events: none; user-select: none; }
+
   .view { display: none; }
   .view.active { display: block; }
 
@@ -293,6 +297,12 @@
         </button>
       </header>
 
+      <!-- Shown only when the Google Apps Script is older than this page (it would put results under the wrong checks) -->
+      <div id="script-outdated-banner" class="mb-5 hidden rounded-lg border border-fail/60 bg-fail/10 px-4 py-3 text-sm text-graphite-100" role="alert">
+        <p id="script-outdated-title" class="font-semibold text-failtext">The Google Apps Script is out of date.</p>
+        <p id="script-outdated-text" class="mt-1">It does not know the current checklist, so the results would be saved under the wrong checks. <strong>Submit is switched off</strong> until it is updated: deploy the new version of <span class="font-mono">apps-script-code.gs</span>, then reload this page. What you enter is kept on this device.</p>
+      </div>
+
       <!-- Progress: stays at the top while scrolling; each chip jumps to its section -->
       <div id="progress-bar" class="sticky top-2 z-30 mb-5 hidden rounded-lg border border-graphite-700 bg-graphite-950/95 px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur">
         <div id="progress-chips" class="flex flex-wrap items-center gap-2"></div>
@@ -407,7 +417,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-08.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.1</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -457,11 +467,22 @@
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
             <span id="bottom-time">0:00</span>
           </span>
+          <button id="btn-pause" type="button"
+            class="inline-flex items-center gap-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs font-medium text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500"
+            title="Stop the clock, e.g. if something urgent comes up. Press Resume to carry on where you stopped.">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            Pause
+          </button>
+          <span id="pause-badge" role="status" class="hidden rounded-md border border-graphite-400 px-2 py-0.5 text-xs font-semibold text-graphite-100">Paused — the clock is stopped</span>
           <span id="save-status" class="text-graphite-400" aria-live="polite"></span>
         </div>
         <button id="btn-discard" type="button"
           class="flex-shrink-0 whitespace-nowrap rounded-md border border-graphite-600 px-4 py-2.5 text-sm font-medium text-graphite-300 transition hover:border-fail hover:text-failtext disabled:cursor-not-allowed disabled:opacity-60">
           Discard inspection
+        </button>
+        <button id="btn-resume" type="button"
+          class="hidden flex-shrink-0 whitespace-nowrap rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
+          <svg class="mr-1.5 inline h-4 w-4 align-text-bottom" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Resume
         </button>
         <button id="btn-submit" type="button"
           class="flex-shrink-0 whitespace-nowrap rounded-md bg-leaf-500 px-5 py-2.5 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-60">
@@ -520,6 +541,9 @@
     "NUCU BIOS version": `(on the dashboard, under the Details tab: must match the defined version)`,
     "NUCU PD FW version": `(on the dashboard, under the Details tab: must match the defined version)`,
     "Connector board power button test": `(1 press - turns off within 1 min, 1 press - turns on)<br>(also test this if the Connector board FW has been fixed)`,
+    "Computer box installation": `(washers)`,
+    "Cable cover installation": `(washers)`,
+    "Connector cover installation": `(washers)`,
   };
 
   // Kiosk-dashboard buttons (Material icons, same look as on the dashboard),
@@ -564,6 +588,7 @@
         "NUCU BIOS version",
         "NUCU PD FW version",
         "Connector board power button test",
+        "USB ports test",
         "Monitor brightness 100%",
         "Kiosk app volume 50%",
         "Red LED",
@@ -591,13 +616,14 @@
         "PMS base fit / damage",
         "PMS back fit / damage",
         "PMS screen fit / damage",
-        "Cables (LEDs, Monitor, Grounding)",
-        "PMS to housing screws + washers",
         "Camera cover fit",
         "Camera cover screws",
+        "Mount fit test",
+        "Mounting screws + Mount plug (optional)",
+        "Monitor folding test",
+        "PMS screen fixing screws",
         "Glass fit / damage",
         "Glass screws",
-        "PMS screen fixing screws",
       ],
     },
     5: {
@@ -610,13 +636,12 @@
         "Camera cables",
         "LED cables",
         "Connector board",
-        "Fan (2x) + Jetson (spinning quietly?)",
         "Fan cables",
-        "Computer box fit / damage",
-        "Cable cover fit / damage",
-        "Connector cover fit / damage",
-        "Computer box screws + washers",
-        "Connector cover screws",
+        "Fan (2x) + Jetson (spinning quietly?)",
+        "Computer box installation",
+        "Cable cover installation",
+        "Connector cover installation",
+        "Connector cover fit",
         "ESD check",
       ],
     },
@@ -1121,8 +1146,7 @@
   // SCREW CONFIRMATION (PMS + Housing) — a popup asks "are all the screws
   // tightened?" at a set moment of each section, once it has happened for
   // every active kiosk:
-  //   - PMS:     right after "Glass screws" is answered; the last PMS step,
-  //              "PMS screen fixing screws", is done after the popup.
+  //   - PMS:     once the whole section is answered (its last check is "Glass screws").
   //   - Housing: once the whole section is answered.
   // Submit stays blocked for that section until it's confirmed.
   // ---------------------------------------------------------------------
@@ -1143,7 +1167,8 @@
 
   // Sections whose screw popup comes earlier than "section complete": the
   // popup is due once this item has been answered on every active kiosk.
-  const SCREW_TRIGGER_ITEM = { 4: "Glass screws" };
+  // (none now: in PMS the last check, "Glass screws", is also the one that finishes the section)
+  const SCREW_TRIGGER_ITEM = {};
 
   function screwTriggerIdx(step) {
     const label = SCREW_TRIGGER_ITEM[step];
@@ -1198,7 +1223,8 @@
 
   // True while the screw popup or the discard confirmation is on screen.
   function modalIsOpen() {
-    return !screwModal.classList.contains("hidden") || !document.getElementById("discard-modal").classList.contains("hidden");
+    // (a paused form counts too: it has no keyboard either)
+    return paused || !screwModal.classList.contains("hidden") || !document.getElementById("discard-modal").classList.contains("hidden");
   }
 
   function openScrewModal(step) {
@@ -1291,6 +1317,7 @@
   }
 
   function setCell(k, step, idx, value) {
+    if (paused) return; // the clock is stopped: the form is switched off
     if (step === "5" && isHousingLocked()) return;
     kioskAnswers[k][step][idx] = value;
     const cell = document.querySelector(`.qa-row[data-kiosk="${k}"][data-step="${step}"][data-index="${idx}"]`);
@@ -1596,6 +1623,45 @@
     else { userOpened[step] = false; setCollapsed(step, true); }
   });
 
+  // ---- is the Google Apps Script the same version as this page? ----
+  // Answers are stored by position. If the script has a different checklist, results would land
+  // under the wrong headings in the Sheet. The script says how many checks each section has; when that
+  // differs from this page (or it is an older script that does not answer at all), Submit and saving
+  // to the shared list are switched off — loudly. No answer / no connection never blocks anyone.
+  let scriptOutdated = false;
+  let sheetNotReady = false;
+  // A short fingerprint of every check name, in order (the Apps Script computes the same one).
+  function checklistSignature() {
+    const text = SECTION_KEYS.map((k) => CHECKLISTS[k].items.join("\u0001")).join("\u0001");
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16);
+  }
+  async function checkScriptCompatibility() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=checklistInfo`);
+      const data = await res.json();
+      const mine = SECTION_KEYS.map((s) => CHECKLISTS[s].items.length);
+      if (data && data.ok && Array.isArray(data.counts)) {
+        const sameCounts = data.counts.join() === mine.join();
+        const sameChecks = data.signature === undefined || data.signature === checklistSignature(); // every name, in order (an older script has no fingerprint)
+        sheetNotReady = data.sheet === "blocked";
+        scriptOutdated = !(sameCounts && sameChecks) || sheetNotReady;
+      } else if (data && data.ok === false && /unknown/i.test(String(data.error || ""))) scriptOutdated = true; // an older script does not know the question
+      else return; // some other answer, e.g. a temporary error: no reason to block anyone
+    } catch (err) {
+      return; // no connection: nothing to conclude
+    }
+    document.getElementById("script-outdated-title").textContent = sheetNotReady ? "The Sheet is not ready for this checklist." : "The Google Apps Script is out of date.";
+    document.getElementById("script-outdated-text").innerHTML = sheetNotReady
+      ? "The Sheet's columns do not match the checklist and could not be rearranged automatically, so the results would be saved under the wrong checks. <strong>Submit is switched off</strong> until that is sorted out (see the notes in the Apps Script), then reload this page. What you enter is kept on this device."
+      : "It does not know the current checklist, so the results would be saved under the wrong checks. <strong>Submit is switched off</strong> until it is updated: deploy the new version of <span class=\"font-mono\">apps-script-code.gs</span>, then reload this page. What you enter is kept on this device.";
+    document.getElementById("script-outdated-banner").classList.toggle("hidden", !scriptOutdated);
+    btnSubmit.classList.toggle("opacity-50", scriptOutdated);
+    btnSubmit.title = scriptOutdated ? (sheetNotReady ? "The Sheet is not ready for this checklist yet" : "The Google Apps Script is out of date: deploy its new version and reload this page") : "";
+    if (scriptOutdated) setSaveStatus("local");
+  }
+
   // ---- time spent so far, and whether the work is saved (bottom bar) ----
   function formatClock(totalSec) {
     const sec = Math.max(0, Math.round(totalSec));
@@ -1610,6 +1676,7 @@
     el.classList.toggle("text-graphite-400", state !== "error");
     if (state === "saving") el.textContent = "Saving…";
     else if (state === "error") el.textContent = "Couldn't save — retrying…";
+    else if (state === "local") el.textContent = "✓ Saved on this device only";
     else if (state === "saved") el.textContent = "✓ Saved " + new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
     else el.textContent = "";
   }
@@ -1962,17 +2029,59 @@
   // Re-QA) and stops when the inspection is submitted. A paused and
   // resumed QA keeps adding up: the time used so far travels with the draft.
   // ---------------------------------------------------------------------
-  let elapsedBeforeMs = 0;          // time already used in earlier sittings of this same QA
-  let sessionStartMs = Date.now();  // when the wizard was opened this time
+  let elapsedBeforeMs = 0;          // time already used: earlier sittings of this QA, and earlier stretches before a pause
+  let sessionStartMs = Date.now();  // when the clock last (re)started running
+  let paused = false;               // true while the clock is stopped (the "Pause" button)
+  let pausedFocus = null;           // what had the keyboard focus when it was paused
+  const pageTitle = document.title;
 
+  // While paused nothing is added: the time so far is already in elapsedBeforeMs.
   function currentElapsedSec() {
-    return Math.max(0, Math.round((elapsedBeforeMs + (Date.now() - sessionStartMs)) / 1000));
+    const running = paused ? 0 : Date.now() - sessionStartMs;
+    return Math.max(0, Math.round((elapsedBeforeMs + running) / 1000));
   }
 
   function restartQaTimer(previousSec) {
     elapsedBeforeMs = Math.max(0, Number(previousSec) || 0) * 1000;
     sessionStartMs = Date.now();
+    if (paused) { paused = false; syncPauseUi(); } // a freshly opened/resumed QA always starts running
   }
+
+  // Stop the clock (e.g. something urgent came up) and carry on later exactly where it stopped.
+  // The form is switched off while it is stopped, so no untimed work slips in.
+  function setPaused(wantPaused) {
+    if (wantPaused === paused) return;
+    if (wantPaused) {
+      pausedFocus = document.activeElement;
+      elapsedBeforeMs += Date.now() - sessionStartMs; // bank the time so far
+      paused = true;
+      syncPauseUi();
+      if (hasAnyEntry()) saveDraft();                 // the saved copy then holds the time up to the pause
+      document.getElementById("btn-resume").focus();
+    } else {
+      sessionStartMs = Date.now();                    // the clock runs again from this moment
+      paused = false;
+      syncPauseUi();
+      const back = pausedFocus && document.body.contains(pausedFocus) ? pausedFocus : document.getElementById("btn-pause");
+      try { back.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+      pausedFocus = null;
+    }
+  }
+
+  function syncPauseUi() {
+    document.getElementById("page").classList.toggle("is-paused", paused);
+    document.querySelector("main").toggleAttribute("inert", paused);        // no clicks, no focus, no keyboard
+    document.getElementById("progress-bar").toggleAttribute("inert", paused);
+    document.getElementById("btn-pause").classList.toggle("hidden", paused);
+    document.getElementById("pause-badge").classList.toggle("hidden", !paused);
+    document.getElementById("btn-resume").classList.toggle("hidden", !paused);
+    document.getElementById("btn-submit").classList.toggle("hidden", paused); // there is nothing to submit until it runs again
+    document.getElementById("bottom-time").classList.toggle("font-semibold", paused);
+    document.getElementById("bottom-time").classList.toggle("text-graphite-100", paused);
+    document.title = paused ? "⏸ Paused — " + pageTitle : pageTitle;
+  }
+  document.getElementById("btn-pause").addEventListener("click", () => setPaused(true));
+  document.getElementById("btn-resume").addEventListener("click", () => setPaused(false));
 
   function localCacheKey(id) {
     return DRAFTS_KEY + ":" + id;
@@ -2025,6 +2134,7 @@
       kioskComments,
       savedAt: nextSavedAt(),
       elapsedSec: currentElapsedSec(),
+      checklistVersion: CHECKLIST_VERSION, // which edition of the checklist these answers belong to
     };
   }
 
@@ -2042,6 +2152,7 @@
   async function pumpDraftSave() {
     if (saveInFlight || draftSavesPaused) return; // the running save re-checks when it finishes
     if (!saveDirty || !currentDraftId) return;
+    if (scriptOutdated) { saveDirty = false; setSaveStatus("local"); return; } // the copy on this device is already saved
     saveInFlight = true;
     saveDirty = false;
     const controller = typeof AbortController === "function" ? new AbortController() : null;
@@ -2073,7 +2184,7 @@
     }
     saveDirty = true;
     saveRetryTimer = null;
-    setSaveStatus("saving");
+    setSaveStatus(scriptOutdated ? "local" : "saving"); // (the copy on this device is written right away)
     clearTimeout(saveDraftTimer);
     saveDraftTimer = setTimeout(pumpDraftSave, 800);
   }
@@ -2175,6 +2286,44 @@
     }
   }
 
+  // Answers are kept by POSITION, so a draft saved with an older checklist would have every answer slip
+  // onto the wrong check. Every draft says which edition of the checklist it was saved with; an older one
+  // (no edition number) is carried over by NAME. Editions: 0 = before "USB ports test", 1 = with it,
+  // 2 = PMS and Housing reworked (this one).
+  const CHECKLIST_VERSION = 2;
+  const LEGACY_FUNCTIONAL_COUNT = 26; // the Functional list of edition 0
+  const LEGACY_V1_ITEMS = {
+    "4": [
+      "PMS base fit / damage", "PMS back fit / damage", "PMS screen fit / damage", "Cables (LEDs, Monitor, Grounding)",
+      "PMS to housing screws + washers", "Camera cover fit", "Camera cover screws", "Glass fit / damage", "Glass screws",
+      "PMS screen fixing screws",
+    ],
+    "5": [
+      "Housing damage", "Protector fit / damage", "Protector screws", "Grounding wire", "Camera cables", "LED cables",
+      "Connector board", "Fan (2x) + Jetson", "Fan cables", "Computer box fit / damage", "Cable cover fit / damage",
+      "Connector cover fit / damage", "Computer box screws + washers", "Connector cover screws", "ESD check",
+    ],
+  };
+  const RENAMED_CHECKS = [{ from: "Fan (2x) + Jetson", to: "Fan (2x) + Jetson (spinning quietly?)" }];
+  const formerNameOf = (label) => { let from = label; RENAMED_CHECKS.forEach((r) => { if (r.to === label) from = r.from; }); return from; };
+
+  function upgradeLegacyAnswers(step, list, version) {
+    if (version === CHECKLIST_VERSION) return list;
+    let out = list;
+    const usb = CHECKLISTS[step].items.indexOf("USB ports test"); // edition 0 -> 1
+    if (step === "2" && usb >= 0 && out.length === LEGACY_FUNCTIONAL_COUNT) {
+      out = out.slice();
+      out.splice(usb, 0, null);
+    }
+    const old = LEGACY_V1_ITEMS[step]; // edition 1 -> 2
+    if (old && out.length === old.length) {
+      const byName = {};
+      old.forEach((label, i) => { byName[label] = out[i]; });
+      out = CHECKLISTS[step].items.map((label) => (byName[formerNameOf(label)] === undefined ? null : byName[formerNameOf(label)]));
+    }
+    return out;
+  }
+
   function applyDraft(draft) {
     restartQaTimer(draft.elapsedSec);
     lastSavedAtMs = Math.max(lastSavedAtMs, Date.parse(draft.savedAt) || 0);
@@ -2196,7 +2345,7 @@
       SECTION_KEYS.forEach((step) => {
         // Make every list exactly as long as the current checklist, with only
         // "pass" / "fail" / null in it (a copy from an older version may differ).
-        const saved = Array.isArray(kioskAnswers[k][step]) ? kioskAnswers[k][step] : [];
+        const saved = upgradeLegacyAnswers(step, Array.isArray(kioskAnswers[k][step]) ? kioskAnswers[k][step] : [], draft.checklistVersion);
         kioskAnswers[k][step] = CHECKLISTS[step].items.map((_, i) => (saved[i] === "pass" || saved[i] === "fail" ? saved[i] : null));
       });
     }
@@ -2323,8 +2472,14 @@
   }
 
   btnSubmit.addEventListener("click", async () => {
-    const result = validateAll();
+    if (paused) return; // resume the clock first
     const errorEl = document.getElementById("submit-error");
+    if (scriptOutdated) {
+      errorEl.textContent = "The Google Apps Script is out of date, so this can't be submitted yet (the results would be saved under the wrong checks). Deploy its new version, then reload this page.";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    const result = validateAll();
     if (!result.ok) {
       errorEl.textContent = result.message;
       errorEl.classList.remove("hidden");
@@ -2469,6 +2624,8 @@
   updateAddRemoveVisibility();
   rebuildMatrix();
   rebuildComments();
+
+  checkScriptCompatibility(); // in the background; never delays the form
 
   (async function init() {
     const params = new URLSearchParams(window.location.search);
