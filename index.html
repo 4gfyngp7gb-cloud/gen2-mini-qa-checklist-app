@@ -86,7 +86,21 @@
   .modal { display: none; }
   .modal.open { display: flex; }
   /* rows of inspections that are still being done ("currently in progress") */
-  table.qa-table tbody tr.in-progress td:first-child { box-shadow: inset 3px 0 0 rgb(var(--leaf-500) / 0.65); }
+  table.qa-table tbody tr.draft-row td:first-child { box-shadow: inset 3px 0 0 rgb(var(--leaf-500) / 0.65); }
+  table.qa-table tbody tr.draft-row.is-unfinished td:first-child { box-shadow: inset 3px 0 0 rgb(var(--g-500) / 0.8); }
+  /* the three lists: finished / unfinished / in progress */
+  .view-tab {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    border: 1px solid rgb(var(--g-600)); border-radius: 0.375rem;
+    padding: 0.4rem 0.85rem; font-size: 0.875rem; line-height: 1.25rem;
+    color: rgb(var(--g-300)); background: transparent; transition: border-color 150ms ease, color 150ms ease;
+  }
+  .view-tab:hover { border-color: rgb(var(--leaf-500)); color: rgb(var(--g-100)); }
+  .view-tab[aria-selected="true"] { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.12); color: rgb(var(--g-100)); font-weight: 600; }
+  .view-tab .tab-count {
+    min-width: 1.5rem; border-radius: 9999px; padding: 0 0.4rem; text-align: center;
+    font-size: 0.8125rem; font-weight: 600; background: rgb(var(--g-700)); color: rgb(var(--g-200));
+  }
   table.qa-table td.progress-actions { vertical-align: middle; }
   .progress-dot {
     display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px;
@@ -157,6 +171,10 @@
           <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-graphite-800">
             <div id="stat-shipped-bar" class="h-full rounded-full bg-leaf-500 transition-all duration-300" style="width: 0%"></div>
           </div>
+          <label class="mt-3 flex items-center gap-2 text-xs text-graphite-400" title="Your name is saved with each 'shipped' tick, so it is clear who sent the kiosk out. It is remembered on this computer.">
+            Marking as
+            <select id="ship-by" class="rounded-md border border-graphite-600 bg-graphite-800 px-2 py-1 text-xs text-graphite-100 focus:border-leaf-500"><option value="">(no name)</option></select>
+          </label>
           <p id="ship-error" class="mt-2 hidden text-sm text-failtext" role="alert"></p>
         </div>
       </div>
@@ -227,7 +245,15 @@
       </div>
     </div>
 
-    <!-- Table -->
+    <!-- Which list: the finished inspections (the main table), the ones put aside, or the ones being worked on now -->
+    <div id="view-tabs" class="mb-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inspections">
+      <button type="button" role="tab" data-view="finished" class="view-tab" aria-selected="true">Finished inspections</button>
+      <button type="button" role="tab" data-view="unfinished" class="view-tab" aria-selected="false">Unfinished inspections <span id="count-unfinished" class="tab-count">0</span></button>
+      <button type="button" role="tab" data-view="progress" class="view-tab" aria-selected="false">In progress inspections <span id="count-progress" class="tab-count">0</span></button>
+    </div>
+    <h2 id="table-title" class="mb-2 text-base font-semibold text-graphite-100">Finished inspections</h2>
+
+    <!-- Finished inspections (the main table) -->
     <div id="table-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
       <table class="qa-table">
         <thead>
@@ -245,12 +271,33 @@
         <tbody id="table-body"></tbody>
       </table>
     </div>
+    <div id="load-more-wrap" class="mt-3 hidden text-center">
+      <button id="btn-load-more" type="button" class="rounded-md border border-graphite-600 px-5 py-2 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Load more</button>
+      <p id="load-more-info" class="mt-1 text-xs text-graphite-500"></p>
+    </div>
+
+    <!-- Unfinished (put aside, to be resumed) and in progress (being worked on now; view only) -->
+    <div id="drafts-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
+      <table class="qa-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Technician</th>
+            <th>Serial</th>
+            <th>Status</th>
+            <th>QA time so far</th>
+            <th id="drafts-actions-th"></th>
+          </tr>
+        </thead>
+        <tbody id="drafts-body"></tbody>
+      </table>
+    </div>
 
     <p id="empty-state" class="hidden rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.2</p>
   </div>
 
   <!-- Detail modal -->
@@ -514,10 +561,15 @@
   // They are shown as "currently in progress" rows at the top of the table, one row
   // per kiosk. Once the inspection is submitted, the row turns into the usual one.
   // ---------------------------------------------------------------------
-  let pendingDelete = null;       // { id }: the inspection whose "discard?" question is open
+  const PAGE_SIZE = 20;           // the finished list shows this many kiosks at first, and this many more each time
+  let visibleLimit = PAGE_SIZE;
+  let view = "finished";          // which list is open: "finished" | "unfinished" | "progress"
+  // An inspection that was not put aside on purpose but has not been saved for this long is counted as left behind.
+  const ACTIVE_FRESH_MS = 10 * 60 * 1000;
   let dataLoaded = false;         // the first load of the submissions has finished
   let lastDrafts = [];            // the unfinished inspections as last fetched from the server
-  let currentProgress = [];       // the in-progress rows currently on screen (after the filters)
+  let currentProgress = [];       // the "in progress" rows (after the filters)
+  let currentUnfinished = [];     // the "unfinished" rows (after the filters)
   const justFinished = new Set(); // serials whose row has just turned from "in progress" into a finished one
 
   // ---------------------------------------------------------------------
@@ -645,14 +697,6 @@
     return null; // null = "could not tell" (an empty list is a real answer: nothing in progress)
   }
 
-  function deleteDraft(id) {
-    return fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "deleteDraft", id }),
-    }).catch((err) => console.error("Could not delete this draft:", err));
-  }
-
   // Re-reads what changes during the day in ONE request: the unfinished inspections and the
   // shipped kiosks. An Apps Script from before shipping existed does not know this request;
   // then only the drafts are read and the shipping marks are switched off (not broken).
@@ -685,7 +729,7 @@
   // A fingerprint of what the screen shows from the live data (unfinished QAs + shipped marks).
   function liveSignature() {
     return JSON.stringify([
-      lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.dateValue, d.serialValues]),
+      lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.dateValue, d.serialValues, d.paused === true, draftState(d), d.elapsedSec || 0]),
       Array.from(shippedMap.entries()), shipState,
     ]);
   }
@@ -709,12 +753,23 @@
     if (dataLoaded) { renderShippedStat(); refresh(); }
   }
 
+  // Where an unfinished inspection belongs:
+  //   "unfinished" = put aside on purpose (Pause / Home in the QA form), or left behind (nothing saved for a while):
+  //                  it can be resumed;
+  //   "progress"   = being worked on right now (the form saves it again every couple of minutes).
+  function draftState(draft) {
+    if (draft.paused) return "unfinished";
+    const t = Date.parse(draft.savedAt);
+    return isFinite(t) && Date.now() - t < ACTIVE_FRESH_MS ? "progress" : "unfinished";
+  }
+
   // one entry per kiosk of every unfinished inspection, filtered like the finished ones
-  function buildProgressRows(f) {
+  function buildDraftRows(f) {
     const rows = [];
     lastDrafts.forEach((draft) => {
       const serials = (draft.serialValues || []).filter(Boolean);
-      serials.forEach((serial) => rows.push({ draft, serial, total: serials.length }));
+      const state = draftState(draft);
+      serials.forEach((serial) => rows.push({ draft, serial, total: serials.length, state }));
     });
     return rows.filter(({ draft, serial }) => {
       const date = draft.dateValue || "";
@@ -738,50 +793,42 @@
 
   const attr = (v) => String(v).replace(/"/g, "&quot;");
 
-  // One row per kiosk. The actions (Resume / ✕) belong to the whole inspection, so they appear ONCE,
-  // in a cell that spans all the kiosk rows of that inspection: `first` marks the first row of an
-  // inspection, `span` is how many of its rows are on screen (fewer when a filter hides some).
-  function progressRowHtml({ draft, serial, total, first, span }) {
+  // One row per kiosk. "Unfinished" rows have ONE Resume button per inspection, in a cell merged over all its
+  // kiosk rows (`first` marks the first row of an inspection, `span` how many of its rows are on screen).
+  // "In progress" rows can only be looked at: no buttons.
+  function draftRowHtml({ draft, serial, total, first, span }, kind) {
     const id = attr(draft.id);
     const kiosksNote = total > 1 ? ` (${total} kiosks)` : "";
-    const lead = `
-      <td></td>
-      <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
-      <td>${escapeHtml(draft.technician || "")}</td>
-      <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>`;
-    const asking = pendingDelete && pendingDelete.id === draft.id;
-
+    const togetherNote = total > 1 ? ` · ${total} kiosks together` : "";
+    const saved = savedText(draft.savedAt);
     let status;
-    if (asking && first) {
-      status = `<td colspan="3" class="text-graphite-100">Discard this whole inspection${total > 1 ? ` (all ${total} kiosks)` : ""}? This can't be undone.</td>`;
+    if (kind === "progress") {
+      status = `<span class="inline-flex items-center gap-2 text-graphite-200"><span class="progress-dot" aria-hidden="true"></span>Currently in progress</span>
+          <span class="ml-2 text-graphite-500">last ${escapeHtml(saved)}${togetherNote}</span>`;
     } else {
-      const saved = savedText(draft.savedAt);
+      const label = draft.paused ? "Paused" : "Left unfinished";
       const hint = looksAlreadySubmitted(draft, serial)
-        ? `<span class="mt-1 block text-xs text-graphite-400">Already in the list for this technician and date. If it's finished, discard it with ✕.</span>`
+        ? `<span class="mt-1 block text-xs text-graphite-400">Already in the finished list for this technician and date. If it is done, press Resume and use Discard inspection.</span>`
         : "";
-      status = `
-        <td colspan="3">
-          <span class="inline-flex items-center gap-2 text-graphite-200"><span class="progress-dot" aria-hidden="true"></span>Currently in progress</span>
-          <span class="ml-2 text-graphite-500">${escapeHtml(saved)}${total > 1 ? ` · ${total} kiosks together` : ""}</span>
-          ${hint}
-        </td>`;
+      status = `<span class="inline-flex items-center gap-2 text-graphite-200"><svg class="h-3.5 w-3.5 text-graphite-400" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>${label}</span>
+          <span class="ml-2 text-graphite-500">${escapeHtml(saved)}${togetherNote}</span>${hint}`;
     }
-
+    const time = draft.elapsedSec > 0 ? durationHtml({ durationSec: draft.elapsedSec, sessionKiosks: 1 }) : "";
     let actions = "";
-    if (first && asking) {
+    if (kind === "unfinished" && first) {
       actions = `
         <td rowspan="${span}" class="progress-actions whitespace-nowrap">
-          <button type="button" data-confirm-delete-draft="${id}" class="rounded-md bg-fail px-2.5 py-1 text-xs font-semibold text-white transition hover:opacity-90">Yes, discard</button>
-          <button type="button" data-cancel-delete-draft="1" class="ml-1 rounded-md border border-graphite-600 px-2.5 py-1 text-xs text-graphite-300 transition hover:border-graphite-400">Cancel</button>
-        </td>`;
-    } else if (first) {
-      actions = `
-        <td rowspan="${span}" class="progress-actions whitespace-nowrap">
-          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-2.5 py-1 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
-          <button type="button" data-delete-draft="${id}" aria-label="Discard this whole inspection${kiosksNote}" class="ml-1 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-400 transition hover:border-fail hover:text-failtext">✕</button>
+          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
         </td>`;
     }
-    return `<tr class="in-progress" data-progress-draft="${id}">${lead}${status}${actions}</tr>`;
+    return `
+      <tr class="draft-row ${kind === "unfinished" ? "is-unfinished" : "is-progress"}" data-draft="${id}">
+        <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
+        <td>${escapeHtml(draft.technician || "")}</td>
+        <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>
+        <td>${status}</td>
+        <td class="whitespace-nowrap">${time || '<span class="text-graphite-500">—</span>'}</td>${actions}
+      </tr>`;
   }
 
   // Kiosks inspected together are submitted in one go, so they sit on
@@ -839,20 +886,11 @@
   function runsNoteHtml(s) {
     const runs = s.__runs || [];
     if (runs.length < 2) return "";
-    const first = runs[0].technician || "—";
-    return `<div class="text-[12px] leading-tight text-graphite-500" title="Who did the first QA of this kiosk, and how many QAs it has had">first: ${escapeHtml(first)} · ${runs.length} QAs</div>`;
+    return `<div class="text-[12px] leading-tight text-graphite-500" title="How many times this kiosk has been QA'd (open Details to see who did what)">${runs.length} QAs</div>`;
   }
 
-  function renderTable(filtered, progress) {
+  function renderTable(filtered) {
     const tbody = document.getElementById("table-body");
-    const progressHtml = progress
-      .map((r, i) => {
-        const first = i === 0 || progress[i - 1].draft.id !== r.draft.id;
-        let span = 0;
-        if (first) while (progress[i + span] && progress[i + span].draft.id === r.draft.id) span++;
-        return progressRowHtml({ ...r, first, span });
-      })
-      .join("");
     const doneHtml = filtered
       .map((s, i) => {
         const { pass, fail } = countResults(s);
@@ -874,30 +912,71 @@
       })
       .join("");
     const focusedShip = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.shipSerial : null;
-    tbody.innerHTML = progressHtml + doneHtml; // unfinished ones on top, then the finished ones
+    tbody.innerHTML = doneHtml;
     if (focusedShip) focusShipBox(focusedShip); // a redraw must not drop the keyboard focus
+  }
 
-    const any = filtered.length + progress.length > 0;
-    document.getElementById("empty-state").classList.toggle("hidden", any);
-    document.getElementById("table-card").classList.toggle("hidden", !any);
+  function renderDrafts(rows, kind) {
+    document.getElementById("drafts-body").innerHTML = rows
+      .map((r, i) => {
+        const first = i === 0 || rows[i - 1].draft.id !== r.draft.id;
+        let span = 0;
+        if (first) while (rows[i + span] && rows[i + span].draft.id === r.draft.id) span++;
+        return draftRowHtml({ ...r, first, span }, kind);
+      })
+      .join("");
+    document.getElementById("drafts-actions-th").classList.toggle("hidden", kind !== "unfinished");
+  }
+
+  const EMPTY_TEXT = {
+    finished: "No inspections match the current filters.",
+    unfinished: "No unfinished inspections. A QA that is stopped with Pause (or Home) waits here to be resumed.",
+    progress: "Nothing is in progress right now.",
+  };
+  const VIEW_TITLE = { finished: "Finished inspections", unfinished: "Unfinished inspections", progress: "In progress inspections" };
+
+  // Shows the list that is open, with its counts.
+  function renderView() {
+    document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+    document.getElementById("table-title").textContent = VIEW_TITLE[view];
+    document.getElementById("count-unfinished").textContent = currentUnfinished.length;
+    document.getElementById("count-progress").textContent = currentProgress.length;
+
+    const shown = currentFiltered.slice(0, visibleLimit);
+    let count;
+    if (view === "finished") {
+      renderTable(shown);
+      const totalKiosks = groupBySerial(allSubmissions).length;
+      count = `Showing ${shown.length} of ${currentFiltered.length} kiosk${currentFiltered.length === 1 ? "" : "s"}` +
+        (currentFiltered.length < totalKiosks ? ` · ${totalKiosks} in total` : ""); // (when a filter hides some)
+    } else {
+      const rows = view === "unfinished" ? currentUnfinished : currentProgress;
+      renderDrafts(rows, view);
+      count = `${rows.length} kiosk${rows.length === 1 ? "" : "s"}`;
+    }
+    const rowsInView = view === "finished" ? shown.length : (view === "unfinished" ? currentUnfinished : currentProgress).length;
+    document.getElementById("filter-count").textContent = count;
+    document.getElementById("table-card").classList.toggle("hidden", !(view === "finished" && rowsInView > 0));
+    document.getElementById("drafts-card").classList.toggle("hidden", !(view !== "finished" && rowsInView > 0));
+    document.getElementById("empty-state").textContent = EMPTY_TEXT[view];
+    document.getElementById("empty-state").classList.toggle("hidden", rowsInView > 0);
+
+    const more = view === "finished" && currentFiltered.length > shown.length;
+    document.getElementById("load-more-wrap").classList.toggle("hidden", !more);
+    if (more) {
+      const next = Math.min(PAGE_SIZE, currentFiltered.length - shown.length);
+      document.getElementById("load-more-info").textContent = `Showing ${shown.length} of ${currentFiltered.length} kiosks · loads ${next} more`;
+    }
   }
 
   // ---------------------------------------------------------------------
-  // DETAILS / EDIT WINDOW
-  // "Details" shows every result plus the edit history. "Edit" lets someone
-  // correct a result (e.g. Fail -> Pass); the change is written to the Sheet,
-  // and who made it and when is recorded (Edit log tab + a note on the cell).
+  // DETAILS WINDOW — every result of a kiosk's latest QA, and its QA history: who did each QA, who pressed
+  // Re-QA how many times, and what each Re-QA changed. Results are not edited here: to change one, press
+  // Re-QA, which opens the saved results in the QA form (where they can be changed) and records a new QA.
   // ---------------------------------------------------------------------
   let PEOPLE = [];
   let currentDetail = null;
-  let detailTab = "details";
-  let editChanges = {};        // "step:index" -> "pass" | "fail" (only values that differ from the saved one)
-  let editShowAll = false;
-  let editorSelect = "";       // a name from PEOPLE, "__other__", or ""
-  let editorOther = "";
-  let editBusy = false;
-  let detailMessage = null;    // { kind: "success" | "error", text }
-  const EDITOR_KEY = "qaEditorName";
+  const EDITOR_KEY = "qaEditorName"; // the name remembered on this computer (used for "who marked it shipped")
 
   async function loadPeople() {
     try {
@@ -909,19 +988,19 @@
     }
   }
 
-  function loadRememberedEditor() {
-    let name = "";
-    try { name = localStorage.getItem(EDITOR_KEY) || ""; } catch (e) { /* ignore */ }
-    if (!name) { editorSelect = ""; editorOther = ""; }
-    else if (PEOPLE.indexOf(name) !== -1) { editorSelect = name; editorOther = ""; }
-    else { editorSelect = "__other__"; editorOther = name; }
+  // The "Marking as" name picker next to the shipped number.
+  function populateShipBy() {
+    const sel = document.getElementById("ship-by");
+    let remembered = "";
+    try { remembered = localStorage.getItem(EDITOR_KEY) || ""; } catch (e) { /* ignore */ }
+    const names = PEOPLE.slice();
+    if (remembered && names.indexOf(remembered) === -1) names.push(remembered);
+    sel.innerHTML = '<option value="">(no name)</option>' + names.map((n) => `<option value="${attr(n)}">${escapeHtml(n)}</option>`).join("");
+    sel.value = remembered;
   }
-  function rememberEditor(name) {
-    try { localStorage.setItem(EDITOR_KEY, name); } catch (e) { /* ignore */ }
-  }
-  function getEditorName() {
-    return editorSelect === "__other__" ? editorOther.trim() : editorSelect;
-  }
+  document.getElementById("ship-by").addEventListener("change", (e) => {
+    try { localStorage.setItem(EDITOR_KEY, e.target.value); } catch (err) { /* ignore */ }
+  });
 
   const resultWord = (v) => (v === "pass" ? "Pass" : v === "fail" ? "Fail" : "—");
   const resultBadge = (v) =>
@@ -941,12 +1020,6 @@
 
   function openDetail(sub) {
     currentDetail = sub;
-    detailTab = "details";
-    editChanges = {};
-    editShowAll = false;
-    detailMessage = null;
-    editBusy = false;
-    loadRememberedEditor();
     renderDetail();
     document.getElementById("detail-modal").classList.add("open");
   }
@@ -956,32 +1029,44 @@
     if (!sub) return;
     document.getElementById("detail-serial").textContent = sub.serial || "(no serial)";
     document.getElementById("detail-meta").textContent = `${sub.inspectionDate} · ${sub.technician || "—"}`;
-
-    const tab = (id, label, extra) =>
-      `<button type="button" data-detail-tab="${id}" class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition ${
-        detailTab === id ? "border-leaf-500 text-leaf-500" : "border-transparent text-graphite-400 hover:text-graphite-200"
-      }">${label}${extra || ""}</button>`;
-    const editedCount = (sub.edits || []).length;
-    document.getElementById("detail-tabs").innerHTML =
-      tab("details", "Details", editedCount ? ` <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 text-[12px] text-graphite-300">edited</span>` : "") +
-      tab("edit", "Edit");
-
-    document.getElementById("detail-body").innerHTML = detailTab === "edit" ? renderEditBody(sub) : renderDetailsBody(sub);
-  }
-
-  function messageHtml() {
-    if (!detailMessage) return "";
-    const ok = detailMessage.kind === "success";
-    return `<div class="rounded-md border px-3 py-2 text-sm ${ok ? "border-leaf-500/60 bg-leaf-500/10 text-leaf-500" : "border-fail/60 bg-fail/10 text-failtext"}">${escapeHtml(detailMessage.text)}</div>`;
+    document.getElementById("detail-tabs").classList.add("hidden"); // one view only: no tabs any more
+    document.getElementById("detail-body").innerHTML = renderDetailsBody(sub);
   }
 
   function runSummary(r) {
     const { pass, fail } = countResults(r);
     const time = r.durationSec !== null && r.durationSec !== undefined ? ` · ${formatDuration(r.durationSec)}` : "";
-    return `${escapeHtml(r.inspectionDate)} · ${escapeHtml(r.technician || "—")} · Pass ${pass} / Fail ${fail}${time}`;
+    return `${escapeHtml(r.inspectionDate)} · Pass ${pass} / Fail ${fail}${time}`;
   }
 
-  // All QAs of this kiosk, newest first, each one openable. Shown when there is more than one.
+  // What a Re-QA changed compared with the QA before it: results that flipped (Pass <-> Fail), and how many
+  // checks were answered for the first time (e.g. checks that were added to the checklist in between).
+  function diffRuns(prev, cur) {
+    const flips = [];
+    let added = 0;
+    SECTION_KEYS.forEach((step) => {
+      SECTIONS[step].items.forEach((label, idx) => {
+        const a = (prev.checklist[step] || [])[idx];
+        const b = (cur.checklist[step] || [])[idx];
+        if (a === b) return;
+        if (a === null || a === undefined) { if (b) added++; return; }
+        flips.push({ label, from: a, to: b });
+      });
+    });
+    return { flips, added };
+  }
+
+  function changesHtml(prev, cur) {
+    const { flips, added } = diffRuns(prev, cur);
+    if (flips.length === 0 && added === 0) return `<p class="mt-1 text-xs text-graphite-500">No result was changed.</p>`;
+    const CAP = 20;
+    const lines = flips.slice(0, CAP).map((c) => `<p class="text-xs text-graphite-300">${escapeHtml(c.label)}: ${resultBadge(c.from)} <span class="text-graphite-500">→</span> ${resultBadge(c.to)}</p>`).join("");
+    const more = flips.length > CAP ? `<p class="text-xs text-graphite-500">…and ${flips.length - CAP} more</p>` : "";
+    const newly = added ? `<p class="text-xs text-graphite-500">${added} check${added === 1 ? "" : "s"} answered for the first time</p>` : "";
+    return `<div class="mt-1 space-y-0.5">${lines}${more}${newly}</div>`;
+  }
+
+  // All QAs of this kiosk, newest first, each one openable: who did it, what changed. Shown when there is more than one.
   function renderRunHistory(sub) {
     const runs = sub.__runs || [];
     if (runs.length < 2) return "";
@@ -993,26 +1078,38 @@
         <button type="button" data-view-run="${latestIdx}" class="flex-shrink-0 text-leaf-500 underline hover:text-leaf-600">Back to the latest</button>
       </div>`;
     }
+    // who pressed Re-QA, and how many times
+    const counts = new Map();
+    runs.slice(1).forEach((r) => { const name = r.technician || "—"; counts.set(name, (counts.get(name) || 0) + 1); });
+    const summary = Array.from(counts.entries()).map(([name, n]) => `${escapeHtml(name)} ×${n}`).join(" · ");
+
     const lines = runs
       .map((r, i) => ({ r, i }))
       .reverse()
       .map(({ r, i }) => {
-        const tag = i === latestIdx ? "latest" : i === 0 ? "first" : "";
         const current = r === sub;
-        return `<div class="flex items-center justify-between gap-3 py-1.5 text-sm">
-          <span class="${current ? "text-graphite-100" : "text-graphite-300"}">${runSummary(r)}${tag ? ` <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 text-[12px] text-graphite-300">${tag}</span>` : ""}</span>
-          ${current ? '<span class="flex-shrink-0 text-xs text-graphite-500">viewing</span>' : `<button type="button" data-view-run="${i}" class="flex-shrink-0 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">View</button>`}
+        const title = i === 0 ? "First QA" : `Re-QA ${i}`;
+        const tag = i === latestIdx ? ` <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 text-[12px] text-graphite-300">latest</span>` : "";
+        return `<div class="border-b border-graphite-800 py-2 last:border-0">
+          <div class="flex items-start justify-between gap-3 text-sm">
+            <div>
+              <p class="${current ? "text-graphite-100" : "text-graphite-200"}"><span class="font-medium">${title}</span> · ${escapeHtml(r.technician || "—")}${tag}</p>
+              <p class="text-xs text-graphite-400">${runSummary(r)}</p>
+            </div>
+            ${current ? '<span class="flex-shrink-0 text-xs text-graphite-500">viewing</span>' : `<button type="button" data-view-run="${i}" class="flex-shrink-0 rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">View</button>`}
+          </div>
+          ${i === 0 ? "" : changesHtml(runs[i - 1], r)}
         </div>`;
       })
       .join("");
-    html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">QA history · ${runs.length} QAs</p>${lines}</div>`;
+    html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">QA history · ${runs.length} QAs</p>
+      <p class="mb-1 text-sm text-graphite-300">Re-QAs: ${summary}</p>${lines}</div>`;
     return html;
   }
 
   function renderDetailsBody(sub) {
-    let html = messageHtml();
-    html += renderRunHistory(sub);
-    // The edit history goes first: it is the key trace, and the list of checks below is long.
+    let html = renderRunHistory(sub);
+    // Changes that were made by hand in the past (the old Edit window) stay visible, read-only.
     if (sub.edits && sub.edits.length) {
       const lines = sub.edits
         .slice()
@@ -1023,7 +1120,7 @@
             <p class="text-xs text-graphite-500">${escapeHtml(e.by)} · ${escapeHtml(formatWhen(e.at))}</p>
           </div>`)
         .join("");
-      html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Edit history</p>${lines}</div>`;
+      html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Earlier edits (made by hand)</p>${lines}</div>`;
     }
     SECTION_KEYS.forEach((step) => {
       const section = SECTIONS[step];
@@ -1039,83 +1136,6 @@
       html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">Comment</p><p class="text-sm text-graphite-300">${escapeHtml(sub.comment)}</p></div>`;
     }
     return html;
-  }
-
-  function segHtml(key, current, saved) {
-    const base = "px-3 py-1 text-xs font-medium transition";
-    const pass = current === "pass" ? "bg-leaf-500/20 text-leaf-500" : "text-graphite-400 hover:text-graphite-200";
-    const fail = current === "fail" ? "bg-fail/20 text-failtext" : "text-graphite-400 hover:text-graphite-200";
-    return `<div class="inline-flex flex-shrink-0 overflow-hidden rounded-md border ${current !== saved ? "border-leaf-500" : "border-graphite-600"}" role="group">
-      <button type="button" data-edit-key="${key}" data-edit-val="pass" aria-pressed="${current === "pass"}" class="${base} ${pass}">Pass</button>
-      <button type="button" data-edit-key="${key}" data-edit-val="fail" aria-pressed="${current === "fail"}" class="${base} border-l border-graphite-600 ${fail}">Fail</button>
-    </div>`;
-  }
-
-  function renderEditBody(sub) {
-    if (typeof sub.row !== "number") {
-      return `<div class="rounded-md border border-fail/60 bg-fail/10 px-3 py-2 text-sm text-failtext">Editing needs the latest Apps Script. Deploy the new version (Deploy → Manage deployments → New version) and reload this page.</div>`;
-    }
-    const fails = countFails(sub);
-    const showAll = editShowAll || fails === 0;
-    let html = messageHtml();
-    html += `<p class="text-sm text-graphite-400">Change a result and save. The Sheet is updated right away, and your name and the time are recorded.</p>`;
-    if (fails > 0) {
-      html += `<label class="flex items-center gap-2 text-sm text-graphite-300"><input id="edit-show-all" type="checkbox" class="h-4 w-4 accent-leaf-500" ${showAll ? "checked" : ""} /> Show all checks (not just the failed ones)</label>`;
-    }
-
-    let shown = 0;
-    SECTION_KEYS.forEach((step) => {
-      const section = SECTIONS[step];
-      const rows = section.items
-        .map((label, idx) => {
-          const saved = (sub.checklist[step] || [])[idx];
-          if (!showAll && saved !== "fail") return "";
-          shown++;
-          const key = `${step}:${idx}`;
-          const current = editChanges[key] || saved;
-          const changed = current !== saved;
-          const control = saved === null || saved === undefined
-            ? '<span class="text-xs text-graphite-500" title="No result recorded — use Re-QA to check it">—</span>'
-            : segHtml(key, current, saved);
-          return `<div class="flex items-center justify-between gap-3 rounded py-1.5 text-sm ${changed ? "bg-graphite-800 px-2 -mx-2" : ""}">
-            <span class="text-graphite-300">${escapeHtml(label)}${changed ? `<span class="block text-[12px] text-graphite-500">was ${resultWord(saved)}</span>` : ""}</span>${control}
-          </div>`;
-        })
-        .join("");
-      if (rows) {
-        html += `<div><p class="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">${escapeHtml(section.title)}</p>${rows}</div>`;
-      }
-    });
-    if (shown === 0) html += `<p class="text-sm text-graphite-500">There are no checks to show.</p>`;
-
-    const people = PEOPLE.map((n) => `<option value="${escapeHtml(n)}" ${editorSelect === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
-    const inputCls = "w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500";
-    html += `<div class="space-y-3 border-t border-graphite-700 pt-4">
-      <div>
-        <label class="mb-1 block text-xs font-medium text-graphite-400" for="edit-editor">Edited by</label>
-        <select id="edit-editor" class="${inputCls}">
-          <option value="">Choose your name…</option>${people}
-          <option value="__other__" ${editorSelect === "__other__" ? "selected" : ""}>Other (type a name)</option>
-        </select>
-        <input id="edit-editor-other" type="text" maxlength="60" autocomplete="off" placeholder="Type your name" value="${escapeHtml(editorOther)}" class="mt-2 ${inputCls} ${editorSelect === "__other__" ? "" : "hidden"}" />
-      </div>
-      <p class="text-xs text-graphite-500">Recorded in the Sheet's “Edit log” tab and as a note on each changed cell.</p>
-      <div class="flex items-center gap-3">
-        <button id="edit-save" type="button" class="rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:cursor-not-allowed disabled:opacity-40"></button>
-        <button id="edit-undo" type="button" class="text-sm text-graphite-400 underline hover:text-graphite-200">Undo changes</button>
-      </div>
-    </div>`;
-    return html;
-  }
-
-  function updateSaveButton() {
-    const btn = document.getElementById("edit-save");
-    if (!btn) return;
-    const n = Object.keys(editChanges).length;
-    btn.textContent = editBusy ? "Saving…" : n > 0 ? `Save ${n} change${n > 1 ? "s" : ""}` : "Save changes";
-    btn.disabled = editBusy || n === 0 || !getEditorName();
-    const undo = document.getElementById("edit-undo");
-    if (undo) undo.classList.toggle("hidden", n === 0 || editBusy);
   }
 
   function afterDataChanged() {
@@ -1149,153 +1169,14 @@
     afterDataChanged();
   }
 
-  async function saveEdit() {
-    const sub = currentDetail;
-    if (!sub || editBusy) return;
-    const editor = getEditorName();
-    const keys = Object.keys(editChanges);
-    if (!editor || keys.length === 0) return;
-
-    const changes = keys.map((key) => {
-      const [step, idx] = key.split(":");
-      return { step, index: Number(idx), item: SECTIONS[step].items[Number(idx)], from: sub.checklist[step][Number(idx)], to: editChanges[key] };
-    });
-    const payload = {
-      action: "editSubmission",
-      row: sub.row,
-      expected: { technician: sub.technician, inspectionDate: sub.inspectionDate, serial: sub.serial },
-      editor,
-      changes,
-    };
-
-    editBusy = true;
-    detailMessage = null;
-    updateSaveButton();
-
-    let resp = null;
-    try {
-      const res = await fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-      });
-      resp = await res.json();
-    } catch (err) {
-      resp = null; // the answer could not be read — the edit may still have been saved, so check below
-    }
-
-    const previous = sub;
-
-    if (resp && resp.ok && resp.submission) {
-      Object.assign(sub, resp.submission);
-      rememberEditor(editor);
-      editChanges = {};
-      detailTab = "details";
-      detailMessage = { kind: "success", text: `Saved. The Sheet was updated and the edit was recorded under ${editor}.` };
-      afterDataChanged();
-    } else if (resp && resp.ok === false) {
-      if (resp.conflict) {
-        const fresh = await fetchSubmissionsQuietly();
-        if (fresh) replaceAllSubmissions(fresh, previous);
-        editChanges = {};
-        detailMessage = { kind: "error", text: resp.error || "This inspection changed in the meantime. The latest data has been loaded — please review and try again." };
-      } else {
-        detailMessage = { kind: "error", text: resp.error || "Could not save the changes." };
-      }
-    } else {
-      // No readable answer: look at the Sheet to find out what really happened.
-      const fresh = await fetchSubmissionsQuietly();
-      if (!fresh) {
-        detailMessage = { kind: "error", text: "Could not reach the server. The edit may or may not have been saved — reload the page before trying again." };
-      } else {
-        const match = fresh.find((s) => sameInspection(s, previous));
-        const stateOf = (c) => (match ? match.checklist[c.step][c.index] : undefined);
-        if (match && changes.every((c) => stateOf(c) === c.to)) {
-          replaceAllSubmissions(fresh, previous);
-          rememberEditor(editor);
-          editChanges = {};
-          detailTab = "details";
-          detailMessage = { kind: "success", text: `Saved. The Sheet was updated and the edit was recorded under ${editor}.` };
-        } else if (match && changes.every((c) => stateOf(c) === c.from)) {
-          detailMessage = { kind: "error", text: "Could not save the changes. Check your connection and try again." };
-        } else {
-          replaceAllSubmissions(fresh, previous);
-          editChanges = {};
-          detailMessage = { kind: "error", text: "This inspection changed in the meantime. The latest data has been loaded — please review and try again." };
-        }
-      }
-    }
-
-    editBusy = false;
-    if (!currentDetail) {
-      document.getElementById("detail-modal").classList.remove("open");
-      return;
-    }
-    renderDetail();
-    updateSaveButton();
-  }
-
-  document.getElementById("detail-tabs").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-detail-tab]");
-    if (!btn || editBusy) return;
-    detailTab = btn.dataset.detailTab;
-    if (detailTab === "details") detailMessage = detailMessage && detailMessage.kind === "success" ? detailMessage : null;
-    else detailMessage = null;
-    renderDetail();
-    updateSaveButton();
-  });
-
   document.getElementById("detail-body").addEventListener("click", (e) => {
     const viewRun = e.target.closest("[data-view-run]");
-    if (viewRun && !editBusy && currentDetail && currentDetail.__runs) {
+    if (viewRun && currentDetail && currentDetail.__runs) {
       const target = currentDetail.__runs[Number(viewRun.dataset.viewRun)];
       if (target) {
         currentDetail = target;
-        detailTab = "details";
-        editChanges = {};
-        detailMessage = null;
         renderDetail();
       }
-      return;
-    }
-    const toggle = e.target.closest("[data-edit-key]");
-    if (toggle && !editBusy && currentDetail) {
-      const key = toggle.dataset.editKey;
-      const [step, idx] = key.split(":");
-      const saved = currentDetail.checklist[step][Number(idx)];
-      const val = toggle.dataset.editVal;
-      if (val === saved) delete editChanges[key];
-      else editChanges[key] = val;
-      renderDetail();
-      updateSaveButton();
-      return;
-    }
-    if (e.target.closest("#edit-undo") && !editBusy) {
-      editChanges = {};
-      renderDetail();
-      updateSaveButton();
-      return;
-    }
-    if (e.target.closest("#edit-save")) saveEdit();
-  });
-
-  document.getElementById("detail-body").addEventListener("change", (e) => {
-    if (e.target.id === "edit-show-all") {
-      editShowAll = e.target.checked;
-      renderDetail();
-      updateSaveButton();
-    } else if (e.target.id === "edit-editor") {
-      editorSelect = e.target.value;
-      renderDetail();
-      updateSaveButton();
-      const other = document.getElementById("edit-editor-other");
-      if (other && editorSelect === "__other__") other.focus();
-    }
-  });
-  document.getElementById("detail-body").addEventListener("input", (e) => {
-    if (e.target.id === "edit-editor-other") {
-      editorOther = e.target.value;
-      updateSaveButton();
     }
   });
 
@@ -1309,11 +1190,10 @@
     populateFilterOptions();
     const f = getFilters();
     currentFiltered = applyFilters(allSubmissions, f);
-    currentProgress = buildProgressRows(f);
-    document.getElementById("filter-count").textContent =
-      `${currentFiltered.length} of ${groupBySerial(allSubmissions).length} kiosks` +
-      (currentProgress.length ? ` · ${currentProgress.length} in progress` : "");
-    renderTable(currentFiltered, currentProgress);
+    const draftRows = buildDraftRows(f);
+    currentUnfinished = draftRows.filter((r) => r.state === "unfinished");
+    currentProgress = draftRows.filter((r) => r.state === "progress");
+    renderView();
   }
 
   document.getElementById("table-body").addEventListener("change", (e) => {
@@ -1324,27 +1204,21 @@
   document.getElementById("table-body").addEventListener("click", (e) => {
     const detailBtn = e.target.closest("[data-detail-idx]");
     const reqaBtn = e.target.closest("[data-reqa-idx]");
-    const deleteBtn = e.target.closest("[data-delete-draft]");
-    const confirmBtn = e.target.closest("[data-confirm-delete-draft]");
-    const cancelBtn = e.target.closest("[data-cancel-delete-draft]");
+    if (detailBtn) openDetail(currentFiltered[Number(detailBtn.dataset.detailIdx)]);
+    else if (reqaBtn) startReQa(currentFiltered[Number(reqaBtn.dataset.reqaIdx)]);
+  });
 
-    if (deleteBtn) {
-      pendingDelete = { id: deleteBtn.dataset.deleteDraft };
-      refresh();
-    } else if (confirmBtn) {
-      const id = confirmBtn.dataset.confirmDeleteDraft;
-      pendingDelete = null;
-      lastDrafts = lastDrafts.filter((d) => d.id !== id); // gone from the screen at once ...
-      refresh();
-      deleteDraft(id).then(refreshLive);              // ... and the list is re-read once the server has deleted it
-    } else if (cancelBtn) {
-      pendingDelete = null;
-      refresh();
-    } else if (detailBtn) {
-      openDetail(currentFiltered[Number(detailBtn.dataset.detailIdx)]);
-    } else if (reqaBtn) {
-      startReQa(currentFiltered[Number(reqaBtn.dataset.reqaIdx)]);
-    }
+  document.getElementById("view-tabs").addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-view]");
+    if (!tab || tab.dataset.view === view) return;
+    view = tab.dataset.view;
+    renderView();
+  });
+
+  // "Load more" always adds another page of 20 (or whatever is left, if that is less).
+  document.getElementById("btn-load-more").addEventListener("click", () => {
+    visibleLimit += PAGE_SIZE;
+    renderView();
   });
 
   function generateDraftId() {
@@ -1367,7 +1241,7 @@
 
     const draft = {
       id: generateDraftId(),
-      technician: sub.technician || "",
+      technician: "", // whoever does the Re-QA picks their own name, so the history shows who really did it
       dateValue: new Date().toISOString().slice(0, 10),
       kioskCount: 1,
       serialValues,
@@ -1390,23 +1264,24 @@
     window.location.href = `qa-app.html?draftId=${encodeURIComponent(draft.id)}`;
   }
 
+  const refreshFromTop = () => { visibleLimit = PAGE_SIZE; refresh(); };
   ["filter-technician", "filter-serial", "filter-from", "filter-to"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", refresh);
-    document.getElementById(id).addEventListener("change", refresh);
+    document.getElementById(id).addEventListener("input", refreshFromTop);
+    document.getElementById(id).addEventListener("change", refreshFromTop);
   });
   document.getElementById("filter-serial").addEventListener("input", (e) => {
     const cursor = e.target.selectionStart;
     e.target.value = e.target.value.toUpperCase();
     e.target.setSelectionRange(cursor, cursor);
   });
-  document.getElementById("filter-only-fails").addEventListener("change", refresh);
+  document.getElementById("filter-only-fails").addEventListener("change", refreshFromTop);
   document.getElementById("btn-clear-filters").addEventListener("click", () => {
     document.getElementById("filter-technician").value = "";
     document.getElementById("filter-serial").value = "";
     document.getElementById("filter-from").value = "";
     document.getElementById("filter-to").value = "";
     document.getElementById("filter-only-fails").checked = false;
-    refresh();
+    refreshFromTop();
   });
 
   document.addEventListener("themechange", () => {
@@ -1470,7 +1345,8 @@
 
   (async function init() {
     refreshLive();      // drafts + shipped marks; independent of submissions, so don't block on it
-    loadPeople();       // names for the "Edited by" choice
+    populateShipBy();   // the remembered name, at once
+    loadPeople().then(populateShipBy); // and the list of names as soon as it arrives
 
     const submissions = await loadSubmissions();
     if (!submissions) return;
