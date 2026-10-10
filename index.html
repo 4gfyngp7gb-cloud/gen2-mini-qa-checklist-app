@@ -140,6 +140,12 @@
 
     <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
 
+    <!-- Shown only when the Google Apps Script has a different checklist than this page (results would show under the wrong checks) -->
+    <div id="script-outdated-banner" class="mb-5 hidden rounded-lg border border-fail/60 bg-fail/10 px-4 py-3 text-sm text-graphite-100" role="alert">
+      <p class="font-semibold text-failtext">The Google Apps Script is out of date.</p>
+      <p class="mt-1">It sends results for a different checklist than this page has, so some results may show under the wrong check. Deploy the new version of <span class="font-mono">apps-script-code.gs</span> (Deploy → Manage deployments → New version), then reload this page.</p>
+    </div>
+
     <!-- Stats — always the full totals, unaffected by filters -->
     <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-5">
       <!-- Left: the number that matters most — kiosks that have been shipped (ticked in the table below) -->
@@ -244,7 +250,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-08.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-10.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -273,7 +279,7 @@
     2: { title: "Functional checks", items: [
       "Round 1 - Restart Jetson (OS restart) 1x","Round 1 - Jetson power cycle 1x","Round 1 - Jetson Recovery 1x","Round 1 - Jetson Reset 1x","Round 1 - Restart NUCU","Round 1 - NUCU power cycle",
       "Round 2 - Restart Jetson (OS restart) 1x","Round 2 - Jetson power cycle 1x","Round 2 - Jetson Recovery 1x","Round 2 - Jetson Reset 1x","Round 2 - Restart NUCU","Round 2 - NUCU power cycle",
-      "NUCU BIOS version","NUCU PD FW version","Connector board power button test",
+      "NUCU BIOS version","NUCU PD FW version","Connector board power button test","USB ports test",
       "Monitor brightness 100%","Kiosk app volume 50%","Red LED","Green LED","White LED",
       "Teamviewer connection","Windows activation check","InTune enrollment check",
       "Connector board status LED","Camera quality & correct FOV","Serial number check",
@@ -281,14 +287,14 @@
     3: { title: "Base", items: ["Base damage","Sticker damage"] },
     4: { title: "PMS", items: [
       "PMS base fit / damage","PMS back fit / damage","PMS screen fit / damage",
-      "Cables (LEDs, Monitor, Grounding)","PMS to housing screws + washers","Camera cover fit",
-      "Camera cover screws","Glass fit / damage","Glass screws","PMS screen fixing screws",
+      "Camera cover fit","Camera cover screws","Mount fit test","Mounting screws + Mount plug (optional)",
+      "Monitor folding test","PMS screen fixing screws","Glass fit / damage","Glass screws",
     ]},
     5: { title: "Housing", items: [
       "Housing damage","Protector fit / damage","Protector screws","Grounding wire",
-      "Camera cables","LED cables","Connector board","Fan (2x) + Jetson","Fan cables",
-      "Computer box fit / damage","Cable cover fit / damage","Connector cover fit / damage",
-      "Computer box screws + washers","Connector cover screws","ESD check",
+      "Camera cables","LED cables","Connector board","Fan cables","Fan (2x) + Jetson (spinning quietly?)",
+      "Computer box installation","Cable cover installation","Connector cover installation",
+      "Connector cover fit","ESD check",
     ]},
   };
   const SECTION_KEYS = Object.keys(SECTIONS);
@@ -408,6 +414,15 @@
     document.getElementById("stat-passrate").textContent = passRate + "%";
     document.getElementById("stat-fails").textContent = totalFail;
     renderShippedStat();
+    updateScriptBanner(data);
+  }
+
+  // The Apps Script and this page must have the same checklist. A script that is a version behind
+  // sends shorter lists of results, and those would be shown under the wrong checks.
+  function updateScriptBanner(list) {
+    const keys = Object.keys(SECTIONS);
+    const mismatch = list.some((s) => keys.some((k) => !s.checklist || !Array.isArray(s.checklist[k]) || s.checklist[k].length !== SECTIONS[k].items.length));
+    document.getElementById("script-outdated-banner").classList.toggle("hidden", !mismatch);
   }
 
   function renderTechnicians(data) {
@@ -1359,6 +1374,7 @@
       kioskComments,
       kioskAnswers: [sub.checklist],
       savedAt: new Date().toISOString(),
+      checklistVersion: 2, // the lists above are in the current checklist's shape (the Apps Script gives them that way)
     };
 
     try {
