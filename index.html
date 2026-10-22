@@ -268,7 +268,6 @@
             <th>Serial</th>
             <th>Pass</th>
             <th>Fail</th>
-            <th>Comment</th>
             <th title="Read the comment, then confirm the final check. A QA is done once its kiosk has passed it.">Final check</th>
             <th></th>
           </tr>
@@ -302,7 +301,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-12.3</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -457,7 +456,8 @@
   // technician who QA'd it FIRST. (Normally there is one QA per kiosk; older data may have more.)
   function currentOfKiosk(runs) {
     const latest = runs[runs.length - 1];
-    return runs.length > 1 && runs[0].technician !== latest.technician ? Object.assign({}, latest, { technician: runs[0].technician }) : latest;
+    // (rawTechnician: whose name stands on the Sheet's row itself; saving a changed result must name exactly that row)
+    return runs.length > 1 && runs[0].technician !== latest.technician ? Object.assign({}, latest, { technician: runs[0].technician, rawTechnician: latest.technician }) : latest;
   }
 
   function latestPerKiosk(list) {
@@ -814,7 +814,46 @@
   let finalWarned = false;        // the person was already told about an unsaved note once
   let finalMsg = null;            // { kind: "ok" | "error" | "warn", text } shown in the final-check window
 
+  let finalEdits = {};            // "step:index" -> "pass" | "fail": results changed in the window and not saved yet
+
   const finalNoteDirty = () => !!currentDetail && finalDraftNote.trim() !== finalNoteOf(serialKey(currentDetail.serial));
+  const finalDirty = () => finalNoteDirty() || Object.keys(finalEdits).length > 0;
+  const savedResult = (sub, k) => { const [step, idx] = k.split(":"); return (sub.checklist[step] || [])[Number(idx)]; };
+  const effectiveResult = (sub, step, idx) => (finalEdits[step + ":" + idx] !== undefined ? finalEdits[step + ":" + idx] : (sub.checklist[step] || [])[idx]);
+  const kioskNow = (key) => latestPerKiosk(allSubmissions).find((s) => serialKey(s.serial) === key);
+
+  // The results changed in the window, as the Apps Script wants them.
+  function pendingChanges(sub) {
+    return Object.keys(finalEdits).map((k) => {
+      const [step, idx] = k.split(":");
+      return { step, index: Number(idx), item: SECTIONS[step].items[Number(idx)], from: savedResult(sub, k), to: finalEdits[k] };
+    });
+  }
+
+  async function postJson(body) {
+    const res = await fetch(WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+    return res.json();
+  }
+
+  // A saved change comes back as the inspection's new data: swap it in and redraw everything that counts it.
+  function applyEditedSubmission(updated) {
+    const i = allSubmissions.findIndex((x) => x.row === updated.row);
+    if (i < 0) return;
+    updated.__order = allSubmissions[i].__order;
+    allSubmissions[i] = updated;
+    afterDataChanged();
+  }
+
+  // Somebody else changed this inspection in the meantime: load everything again and show the window on the new data.
+  async function reloadAfterConflict(key) {
+    const fresh = await fetchSubmissionsQuietly();
+    if (fresh) { fresh.forEach((x, i) => { x.__order = i; }); allSubmissions = fresh; afterDataChanged(); }
+    finalEdits = {};
+    finalSaving = false;
+    currentDetail = kioskNow(key) || currentDetail;
+    finalMsg = { kind: "error", text: "This inspection was changed in the meantime. The latest results were loaded: please look through them again." };
+    renderDetail();
+  }
 
   function openFinal(serial) {
     const key = serialKey(serial);
@@ -822,6 +861,7 @@
     if (!sub || finalState !== "ready") return;
     currentDetail = sub;
     detailMode = "final";
+    finalEdits = {};
     finalDraftNote = finalNoteOf(key);
     const name = rememberedFinalName();
     if (!name) { finalWho = ""; finalWhoOther = ""; }
@@ -847,17 +887,21 @@
 
   // Keeps the buttons right while typing / saving, without redrawing the window (that would lose the cursor).
   function updateFinalButtons() {
-    const dirty = finalNoteDirty();
+    const dirty = finalDirty();
     document.querySelectorAll("[data-final-act]").forEach((b) => {
       b.disabled = finalSaving || (b.dataset.finalAct === "note" && isFinalDone(serialKey(currentDetail.serial)) && !dirty);
     });
+    document.querySelectorAll("[data-edit-key]").forEach((b) => { b.disabled = finalSaving; });
     ["final-note", "final-who", "final-who-other"].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = finalSaving; });
   }
 
-  // kind: "confirm" (done + the note), "note" (only the note), "undo" (take the final check back; the note stays)
+  // kind: "confirm" (done + the note), "note" (only save), "undo" (take the final check back; the note stays)
+  // Changed results are saved FIRST (each one is logged, with its old value, in the "Edit log" tab and in a note on the
+  // cell), so nothing is ever confirmed on results that could not be saved.
   async function saveFinal(kind) {
     if (finalSaving || !currentDetail) return;
-    const key = serialKey(currentDetail.serial);
+    const sub = currentDetail;
+    const key = serialKey(sub.serial);
     const by = finalByName();
     if (!by) { // every change is kept with the name of whoever made it
       finalMsg = { kind: "error", text: "Please choose your name first: it is saved with the final check." };
@@ -866,6 +910,7 @@
       if (who) who.focus({ preventScroll: true });
       return;
     }
+    const changes = kind === "undo" ? [] : pendingChanges(sub);
     const payload = { action: "setFinalCheck", serial: key, by };
     const note = finalDraftNote.trim();
     if (kind === "confirm") { payload.done = true; payload.note = note; }
@@ -875,9 +920,23 @@
     finalMsg = null;
     renderFinalMessage();
     updateFinalButtons();
+    let resultsSaved = false;
     try {
-      const res = await fetch(WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
-      const data = await res.json();
+      if (changes.length) {
+        const edit = await postJson({
+          action: "editSubmission", row: sub.row, editor: by, changes,
+          expected: { technician: sub.rawTechnician !== undefined ? sub.rawTechnician : sub.technician, inspectionDate: sub.inspectionDate, serial: sub.serial },
+        });
+        if (!edit || edit.ok !== true || !edit.submission) {
+          if (edit && edit.conflict) { await reloadAfterConflict(key); return; }
+          throw new Error((edit && edit.error) || "the changed results were not accepted");
+        }
+        applyEditedSubmission(edit.submission);
+        finalEdits = {};
+        resultsSaved = true;
+        currentDetail = kioskNow(key) || currentDetail;
+      }
+      const data = await postJson(payload);
       if (!data || data.ok !== true || !Array.isArray(data.finalChecks)) throw new Error((data && data.error) || "not accepted");
       applyFinalList(data.finalChecks);
       try { localStorage.setItem(FINAL_NAME_KEY, by); } catch (e) { /* ignore */ }
@@ -886,16 +945,21 @@
       renderFinalStat();
       refresh();
       if (kind === "confirm") { closeDetail(); return; }
-      finalDraftNote = finalNoteOf(key);
+      if (kind === "note") finalDraftNote = finalNoteOf(key);
       finalWarned = false;
-      finalMsg = { kind: "ok", text: kind === "note" ? "Note saved." : "The final check was taken back." };
+      finalMsg = { kind: "ok", text: kind === "note" ? "Saved." : "The final check was taken back." };
       renderDetail();
     } catch (err) {
       console.error("Could not save the final check:", err);
       finalSaving = false;
-      finalMsg = { kind: "error", text: "Couldn't save, so nothing was changed. Check the connection and try again. What you wrote is still here." };
-      renderFinalMessage();
-      updateFinalButtons();
+      if (resultsSaved) {
+        finalMsg = { kind: "error", text: "The changed results were saved, but the final check could not be saved. Check the connection and press the button again." };
+        renderDetail(); // shows the results as they are saved now
+      } else {
+        finalMsg = { kind: "error", text: "Couldn't save, so nothing was changed. Check the connection and try again. What you wrote is still here." };
+        renderFinalMessage();
+        updateFinalButtons();
+      }
     }
   }
 
@@ -1115,7 +1179,6 @@
             <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
             <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
-            <td class="min-w-[240px] max-w-[420px] whitespace-pre-wrap break-words text-graphite-200">${escapeHtml(s.comment)}</td>
             <td>${finalCellHtml(s.serial)}</td>
             <td class="whitespace-nowrap">
               <button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button>
@@ -1209,6 +1272,7 @@
   function openDetail(sub) {
     currentDetail = sub;
     detailMode = "view";
+    finalEdits = {};
     finalMsg = null;
     renderDetail();
     document.getElementById("detail-modal").classList.add("open");
@@ -1217,6 +1281,7 @@
   function closeDetail() {
     document.getElementById("detail-modal").classList.remove("open");
     detailMode = "view";
+    finalEdits = {};
     finalMsg = null;
   }
 
@@ -1229,6 +1294,63 @@
     document.getElementById("detail-body").innerHTML = renderDetailsBody(sub);
     renderFinalMessage();
     updateFinalButtons();
+  }
+
+  // The window's results as they would be if the changes were saved: what is shown as failed, and what is just changed.
+  function failedNow(sub) {
+    const out = [];
+    SECTION_KEYS.forEach((step) => SECTIONS[step].items.forEach((label, idx) => {
+      if (effectiveResult(sub, step, idx) === "fail") out.push({ label, changed: finalEdits[step + ":" + idx] !== undefined });
+    }));
+    return out;
+  }
+
+  function failedBlockHtml(sub) {
+    const list = failedNow(sub);
+    if (!list.length) return "";
+    return `<p class="${LABEL_CLS}">Failed checks</p>` + list.map((f) => `<p class="text-sm text-graphite-200">${resultBadge("fail")} ${escapeHtml(f.label)}${f.changed ? ' <span class="text-xs text-graphite-500">(changed, not saved yet)</span>' : ""}</p>`).join("");
+  }
+
+  // One result with Pass / Fail switches (only for checks that have a result; an unanswered one cannot be changed).
+  function editRowHtml(sub, step, idx, label) {
+    const k = step + ":" + idx;
+    const saved = (sub.checklist[step] || [])[idx];
+    if (saved !== "pass" && saved !== "fail") return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(saved)}</div>`;
+    const eff = finalEdits[k] !== undefined ? finalEdits[k] : saved;
+    const sw = (v) => `<button type="button" data-edit-key="${k}" data-edit-val="${v}" aria-pressed="${eff === v}" class="rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
+      eff === v ? (v === "pass" ? "badge-pass" : "badge-fail") + " border border-transparent" : "border border-graphite-600 text-graphite-400 hover:border-leaf-500 hover:text-graphite-200"
+    }">${v === "pass" ? "Pass" : "Fail"}</button>`;
+    return `<div data-edit-row="${k}" class="flex items-center justify-between gap-3 py-1 text-sm">
+      <span class="text-graphite-300">${escapeHtml(label)}${eff !== saved ? `<span class="ml-2 text-xs text-graphite-500">was ${resultWord(saved)}</span>` : ""}</span>
+      <span class="flex gap-1">${sw("pass")}${sw("fail")}</span>
+    </div>`;
+  }
+
+  // A switch was pressed: only that row, the failed list and the buttons change (the note being typed stays untouched).
+  function setFinalEdit(k, val) {
+    if (finalSaving || !currentDetail) return;
+    if (val === savedResult(currentDetail, k)) delete finalEdits[k]; else finalEdits[k] = val;
+    finalWarned = false;
+    const [step, idx] = k.split(":");
+    const row = document.querySelector(`[data-edit-row="${k}"]`);
+    if (row) {
+      row.outerHTML = editRowHtml(currentDetail, step, Number(idx), SECTIONS[step].items[Number(idx)]);
+      const again = document.querySelector(`[data-edit-key="${k}"][data-edit-val="${val}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }
+    paintFinalSummary();
+    updateFinalButtons();
+  }
+
+  function paintFinalSummary() {
+    const failed = document.getElementById("final-failed");
+    if (failed && currentDetail) failed.innerHTML = failedBlockHtml(currentDetail);
+    const pending = document.getElementById("final-pending");
+    if (pending) {
+      const n = Object.keys(finalEdits).length;
+      pending.textContent = n ? `${n} result${n === 1 ? "" : "s"} changed — not saved yet.` : "";
+      pending.classList.toggle("hidden", n === 0);
+    }
   }
 
   function failedLabels(sub) {
@@ -1264,10 +1386,8 @@
     const names = PEOPLE.map((n) => `<option value="${attr(n)}"${finalWho === n ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
     return `<div class="rounded-lg border border-graphite-600 bg-graphite-800/60 p-3">
       <p class="${LABEL_CLS}">Final check</p>
-      <p class="text-sm">${done
-        ? `<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span>`
-        : `<span class="text-graphite-300">Waiting for the final check.</span>`}</p>
-      <label for="final-who" class="mt-3 block text-sm text-graphite-300">Your name <span class="text-failtext" aria-hidden="true">*</span> <span class="text-graphite-500">— saved with the final check</span></label>
+      ${done ? `<p class="text-sm"><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>` : ""}
+      <label for="final-who" class="${done ? "mt-3" : "mt-1"} block text-sm text-graphite-300">Your name <span class="text-failtext" aria-hidden="true">*</span> <span class="text-graphite-500">— saved with the final check</span></label>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <select id="final-who" class="${field}">
           <option value=""${finalWho === "" ? " selected" : ""}>Choose your name…</option>${names}
@@ -1275,16 +1395,17 @@
         </select>
         <input id="final-who-other" type="text" maxlength="60" autocomplete="off" placeholder="Type your name" value="${attr(finalWhoOther)}" class="${field} ${finalWho === "__other__" ? "" : "hidden"}" />
       </div>
-      <label for="final-note" class="mt-3 block text-sm text-graphite-300">Note <span class="text-graphite-500">— if something failed, write what was done about it (e.g. “LED strip replaced, tested OK”)</span></label>
-      <textarea id="final-note" rows="4" maxlength="2000" placeholder="e.g. Red LED fixed: LED strip replaced and tested again" class="mt-1 w-full ${field} placeholder-graphite-500">${escapeHtml(finalDraftNote)}</textarea>
+      <label for="final-note" class="mt-3 block text-sm text-graphite-300">Note</label>
+      <textarea id="final-note" rows="4" maxlength="2000" class="mt-1 w-full ${field}">${escapeHtml(finalDraftNote)}</textarea>
       ${m && m.noteBy ? `<p class="mt-1 text-xs text-graphite-500">Note last saved by ${escapeHtml(m.noteBy)}</p>` : ""}
       <div class="mt-3 flex flex-wrap items-center gap-3">
         ${done
-          ? `<button type="button" data-final-act="note" class="${btn} bg-leaf-500 text-graphite-950 hover:bg-leaf-600">Save note</button>
+          ? `<button type="button" data-final-act="note" class="${btn} bg-leaf-500 text-graphite-950 hover:bg-leaf-600">Save changes</button>
              <button type="button" data-final-act="undo" class="text-sm text-graphite-400 underline hover:text-graphite-200 disabled:opacity-50">Take the final check back</button>`
           : `<button type="button" data-final-act="confirm" class="${btn} bg-leaf-500 text-graphite-950 hover:bg-leaf-600">Confirm final check</button>
-             <button type="button" data-final-act="note" class="${btn} border border-graphite-600 text-graphite-200 hover:border-leaf-500 hover:text-leaf-500">Save note only</button>`}
+             <button type="button" data-final-act="note" class="${btn} border border-graphite-600 text-graphite-200 hover:border-leaf-500 hover:text-leaf-500">Save changes</button>`}
       </div>
+      <p id="final-pending" class="mt-2 hidden text-sm text-graphite-300" role="status"></p>
       <p id="final-msg" class="mt-2 hidden text-sm" role="status"></p>
     </div>`;
   }
@@ -1296,11 +1417,13 @@
     let html = `<div><p class="${LABEL_CLS}">Comment from the QA</p>${sub.comment
       ? `<p class="whitespace-pre-wrap break-words text-sm text-graphite-100">${escapeHtml(sub.comment)}</p>`
       : `<p class="text-sm text-graphite-500">No comment was written.</p>`}</div>`;
-    if (failed.length) {
+    if (detailMode === "final") {
+      html += `<div id="final-failed">${failedBlockHtml(sub)}</div>`; // follows the switches below
+    } else if (failed.length) {
       html += `<div><p class="${LABEL_CLS}">Failed checks</p>${failed.map((l) => `<p class="text-sm text-graphite-200">${resultBadge("fail")} ${escapeHtml(l)}</p>`).join("")}</div>`;
     }
     html += detailMode === "final" ? finalFormHtml(key) : finalReadHtml(key, failed.length);
-    // Changes that were made by hand in the past (the old Edit window) stay visible, read-only.
+    // Results that were changed after the QA (in the final check, or by hand earlier): from -> to, by whom, when.
     if (sub.edits && sub.edits.length) {
       const lines = sub.edits
         .slice()
@@ -1311,12 +1434,13 @@
             <p class="text-xs text-graphite-500">${escapeHtml(e.by)} · ${escapeHtml(formatWhen(e.at))}</p>
           </div>`)
         .join("");
-      html += `<div><p class="${LABEL_CLS}">Earlier edits (made by hand)</p>${lines}</div>`;
+      html += `<div><p class="${LABEL_CLS}">Results changed after the QA</p>${lines}</div>`;
     }
     SECTION_KEYS.forEach((step) => {
       const section = SECTIONS[step];
       const rows = section.items
         .map((label, idx) => {
+          if (detailMode === "final") return editRowHtml(sub, step, idx, label); // the results can be changed here
           const val = (sub.checklist[step] || [])[idx];
           return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
         })
@@ -1359,7 +1483,9 @@
 
   document.getElementById("detail-body").addEventListener("click", (e) => {
     const act = e.target.closest("[data-final-act]");
-    if (act && !act.disabled) saveFinal(act.dataset.finalAct);
+    if (act && !act.disabled) { saveFinal(act.dataset.finalAct); return; }
+    const sw = e.target.closest("[data-edit-key]");
+    if (sw && !sw.disabled && detailMode === "final") setFinalEdit(sw.dataset.editKey, sw.dataset.editVal);
   });
 
   document.getElementById("detail-body").addEventListener("input", (e) => {
@@ -1383,9 +1509,9 @@
   document.getElementById("detail-close").addEventListener("click", () => {
     if (detailMode === "final") {
       if (finalSaving) return; // let the save finish first
-      if (finalNoteDirty() && !finalWarned) { // a note was typed and not saved: ask once
+      if (finalDirty() && !finalWarned) { // a note or a changed result was not saved: ask once
         finalWarned = true;
-        finalMsg = { kind: "warn", text: "There is a note that is not saved. Press Close again to leave without saving it." };
+        finalMsg = { kind: "warn", text: "There are changes that are not saved. Press Close again to leave without saving them." };
         renderFinalMessage();
         return;
       }
