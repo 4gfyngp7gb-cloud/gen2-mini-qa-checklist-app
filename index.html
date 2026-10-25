@@ -301,7 +301,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.3</p>
   </div>
 
   <!-- Detail modal -->
@@ -737,35 +737,21 @@
     return [finalWhen(m), m && m.by].filter(Boolean).join(" · ");
   }
 
-  // The cell of the "Final check" column:
-  //   waiting:  "Waiting" + the Final check button      done:  "✓ Done" + date · name + Open
+  // The cell of the "Final check" column is kept short; who, when and the note are in Details:
+  //   still to do:  just the "Final check" button      done:  just "✓ Done" (pressing it opens the final check window)
   //   shipped and never final-checked:  just "—" (it was finished and shipped before; nothing is waited for)
-  // with the first line of the note underneath.
   function finalCellHtml(serial) {
     const key = serialKey(serial);
     if (!key) return "";
-    const m = finalMap.get(key);
-    const done = isFinalDone(key);
-    const note = finalNoteOf(key);
     const disabled = finalState !== "ready" ? "disabled" : "";
     const dis = "disabled:cursor-not-allowed disabled:opacity-50";
-    const preview = note
-      ? `<span class="mt-1 block max-w-[260px] truncate text-xs text-graphite-400" title="${attr(note)}">${escapeHtml(note.split("\n")[0])}</span>`
-      : "";
-    if (done) {
-      return `<div data-final-state="done"><div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
-        <span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">✓ Done</span>
-        <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span>
-        <button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="text-xs text-graphite-400 underline hover:text-graphite-200 ${dis}">Open</button>
-      </div>${preview}</div>`;
+    if (isFinalDone(key)) {
+      return `<div data-final-state="done"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalState === "ready" ? "Final check done — press to open it" : finalTitle())}" class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass hover:opacity-80 ${dis}">✓ Done</button></div>`;
     }
     if (isShipped(key)) {
-      return `<div data-final-state="shipped"><span class="text-graphite-500" title="Already shipped: no final check is needed">—</span>${preview}</div>`;
+      return `<div data-final-state="shipped"><span class="text-graphite-500" title="Already shipped: no final check is needed">—</span></div>`;
     }
-    return `<div data-final-state="waiting"><div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
-      <span class="text-xs text-graphite-400">Waiting</span>
-      <button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-200 hover:border-leaf-500 hover:text-leaf-500 ${dis}">Final check</button>
-    </div>${preview}</div>`;
+    return `<div data-final-state="waiting"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-200 hover:border-leaf-500 hover:text-leaf-500 ${dis}">Final check</button></div>`;
   }
 
   // "Waiting for final check" in the overview: QA'd kiosks that are not shipped and not final-checked yet.
