@@ -85,6 +85,10 @@
   .badge-fail { color: rgb(var(--fail-text)); background: rgb(var(--fail) / 0.14); }
   .modal { display: none; }
   .modal.open { display: flex; }
+  /* while a window is open only the window scrolls: the page behind it is locked, and the window does not
+     hand its scrolling on to the page when it reaches its top or bottom */
+  html.modal-open { overflow: hidden; }
+  .modal > div { overscroll-behavior: contain; }
   /* rows of inspections that are still being done ("currently in progress") */
   table.qa-table tbody tr.draft-row td:first-child { box-shadow: inset 3px 0 0 rgb(var(--leaf-500) / 0.65); }
   table.qa-table tbody tr.draft-row.is-unfinished td:first-child { box-shadow: inset 3px 0 0 rgb(var(--g-500) / 0.8); }
@@ -301,7 +305,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.3</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.4</p>
   </div>
 
   <!-- Detail modal -->
@@ -857,7 +861,7 @@
     finalWarned = false;
     finalMsg = null;
     renderDetail();
-    document.getElementById("detail-modal").classList.add("open");
+    showDetailModal();
     const box = document.getElementById("final-note");
     if (box) box.focus({ preventScroll: true });
   }
@@ -1255,17 +1259,40 @@
     return SECTION_KEYS.reduce((n, step) => n + (sub.checklist[step] || []).filter((v) => v === "fail").length, 0);
   }
 
+  // Opening a window locks the page behind it (without the page jumping sideways when its scrollbar goes away);
+  // the mouse wheel over the dark area around the window scrolls the window, so it works wherever the mouse is.
+  function showDetailModal() {
+    const root = document.documentElement;
+    const bar = root.clientWidth > 0 ? window.innerWidth - root.clientWidth : 0;
+    if (!root.classList.contains("modal-open")) document.body.style.paddingRight = bar > 0 ? bar + "px" : "";
+    root.classList.add("modal-open");
+    document.getElementById("detail-modal").classList.add("open");
+  }
+
+  function hideDetailModal() {
+    document.getElementById("detail-modal").classList.remove("open");
+    document.documentElement.classList.remove("modal-open");
+    document.body.style.paddingRight = "";
+  }
+
+  document.getElementById("detail-modal").addEventListener("wheel", (e) => {
+    const panel = document.getElementById("detail-modal").firstElementChild;
+    if (panel.contains(e.target)) return; // over the window itself: it scrolls by itself
+    e.preventDefault();                   // over the dark area: scroll the window, never the page
+    panel.scrollTop += e.deltaY;
+  }, { passive: false });
+
   function openDetail(sub) {
     currentDetail = sub;
     detailMode = "view";
     finalEdits = {};
     finalMsg = null;
     renderDetail();
-    document.getElementById("detail-modal").classList.add("open");
+    showDetailModal();
   }
 
   function closeDetail() {
-    document.getElementById("detail-modal").classList.remove("open");
+    hideDetailModal();
     detailMode = "view";
     finalEdits = {};
     finalMsg = null;
