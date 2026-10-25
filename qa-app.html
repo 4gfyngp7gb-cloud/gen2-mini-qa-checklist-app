@@ -418,7 +418,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-15.2</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-16.2</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -493,13 +493,12 @@
 
 <!-- Asks for the team's access code (only when the Apps Script has one set). Opaque: nothing behind it can be read. -->
 <div id="access-gate" class="fixed inset-0 z-[60] items-center justify-center bg-graphite-950 p-4" role="dialog" aria-modal="true" aria-labelledby="access-title">
-  <form id="access-form" autocomplete="off" class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-6 shadow-xl">
-    <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
-    <h2 id="access-title" class="mt-1 text-lg font-semibold text-graphite-100">Enter the access code</h2>
-    <p class="mt-1 text-sm text-graphite-400">Ask your team lead if you do not know it. It is remembered on this computer.</p>
+  <form id="access-form" autocomplete="off" class="w-full max-w-xs rounded-lg border border-graphite-700 bg-graphite-900 p-6 shadow-xl">
+    <p class="text-center font-mono text-sm font-semibold tracking-[0.3em] text-leaf-500">HARDWARE</p>
+    <h2 id="access-title" class="sr-only">Enter the access code</h2>
     <label for="access-input" class="sr-only">Access code</label>
     <input id="access-input" type="password" autocomplete="off" spellcheck="false" placeholder="Access code"
-      class="mt-4 w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+      class="mt-5 w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-center text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
     <p id="access-error" class="mt-2 hidden text-sm text-failtext" role="alert"></p>
     <button id="access-submit" type="submit" class="mt-4 w-full rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:opacity-60">Enter</button>
   </form>
