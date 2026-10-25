@@ -81,10 +81,64 @@
     vertical-align: top;
   }
   table.qa-table tbody tr:hover { background-color: rgb(var(--hover) / 0.04); }
+  /* ---------- One badge style for every state: green = done / pass, red = fail, grey = still to do ---------- */
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap;
+    border-radius: 0.375rem; padding: 0.125rem 0.5rem; font-size: 0.8125rem; line-height: 1.2rem; font-weight: 600;
+  }
   .badge-pass { color: rgb(var(--pass-text)); background: rgb(var(--pass) / 0.14); }
   .badge-fail { color: rgb(var(--fail-text)); background: rgb(var(--fail) / 0.14); }
+  .badge-wait { color: rgb(var(--g-300)); background: rgb(var(--g-700) / 0.7); }
+  button.badge { cursor: pointer; transition: filter 150ms ease, background-color 150ms ease, color 150ms ease; }
+  button.badge:hover:not(:disabled) { filter: brightness(1.18); }
+  button.badge-wait:hover:not(:disabled) { color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.16); }
+  button.badge:disabled { cursor: not-allowed; opacity: 0.5; }
+
+  /* ---------- Motion (all of it is switched off for people who asked for reduced motion, at the end) ---------- */
+  :root { --ease: cubic-bezier(0.2, 0.7, 0.2, 1); }
+  @keyframes qa-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes qa-fade-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes qa-pop-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: none; } }
+  @keyframes qa-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+  @keyframes qa-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes qa-done-pop { 0% { transform: scale(0.55); opacity: 0; } 60% { transform: scale(1.14); opacity: 1; } 100% { transform: scale(1); } }
+  @keyframes qa-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
   .modal { display: none; }
-  .modal.open { display: flex; }
+  .modal.open, .modal.closing { display: flex; }
+  .modal.open { animation: qa-fade-in 180ms ease-out both; }
+  .modal.open > div { animation: qa-pop-in 240ms var(--ease) both; }
+  .modal.closing { animation: qa-fade-out 140ms ease-in both; pointer-events: none; }
+  .modal.closing > div { animation: qa-pop-out 140ms ease-in both; }
+  .view-enter { animation: qa-fade-up 240ms var(--ease) both; }
+  button.final-pop { animation: qa-done-pop 460ms var(--ease) both; }
+  table.qa-table tbody tr.final-flash td { animation: qa-flash 2s ease-out 1; }
+
+  /* grey, softly shimmering placeholders while the data is loading */
+  .sk {
+    display: block; border-radius: 0.375rem;
+    background: linear-gradient(90deg, rgb(var(--g-800)) 25%, rgb(var(--g-700)) 37%, rgb(var(--g-800)) 63%);
+    background-size: 400% 100%; animation: qa-shimmer 1.4s ease infinite;
+  }
+
+  /* the Pass / Fail switch: a highlight that slides from one side to the other */
+  .sw {
+    position: relative; display: inline-grid; grid-template-columns: 1fr 1fr;
+    border: 1px solid rgb(var(--g-600)); border-radius: 0.375rem; padding: 2px; flex-shrink: 0;
+  }
+  .sw::before {
+    content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 0.25rem;
+    background: rgb(var(--pass) / 0.22); transition: transform 200ms var(--ease), background-color 200ms ease;
+  }
+  .sw[data-sw="fail"]::before { transform: translateX(100%); background: rgb(var(--fail) / 0.22); }
+  .sw-btn {
+    position: relative; z-index: 1; min-width: 3rem; padding: 0.1rem 0.6rem; border-radius: 0.25rem;
+    font-size: 0.8125rem; font-weight: 600; text-align: center; color: rgb(var(--g-400)); transition: color 200ms ease;
+  }
+  .sw-btn:hover:not(:disabled) { color: rgb(var(--g-100)); }
+  .sw[data-sw="pass"] .sw-btn[data-edit-val="pass"] { color: rgb(var(--pass-text)); }
+  .sw[data-sw="fail"] .sw-btn[data-edit-val="fail"] { color: rgb(var(--fail-text)); }
+  .sw-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   /* while a window is open only the window scrolls: the page behind it is locked, and the window does not
      hand its scrolling on to the page when it reaches its top or bottom */
   html.modal-open { overflow: hidden; }
@@ -116,6 +170,9 @@
   table.qa-table tbody tr.just-finished td { animation: qa-flash 4s ease-out 1; }
   @media (prefers-reduced-motion: reduce) {
     .progress-dot, table.qa-table tbody tr.just-finished td { animation: none; }
+    .modal.open, .modal.open > div, .modal.closing, .modal.closing > div, .view-enter, button.final-pop,
+    table.qa-table tbody tr.final-flash td, .sk { animation: none !important; }
+    .sw::before, .sw-btn, button.badge, #stat-shipped-bar { transition: none !important; }
   }
   ::-webkit-scrollbar { height: 8px; width: 8px; }
   ::-webkit-scrollbar-thumb { background: rgb(var(--g-600)); border-radius: 4px; }
@@ -156,7 +213,25 @@
       </div>
     </header>
 
-    <p id="load-status" class="mb-4 text-sm text-graphite-400">Loading submissions…</p>
+    <p id="load-status" class="sr-only" role="status">Loading submissions…</p>
+    <!-- grey placeholders instead of a "Loading…" text; replaced by the real overview and table -->
+    <div id="skeleton" class="mb-6" aria-hidden="true">
+      <div class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-5">
+        <div class="sk h-44 sm:col-span-2"></div>
+        <div class="sk h-44 sm:col-span-3"></div>
+      </div>
+      <div class="sk mb-3 h-24"></div>
+      <div class="overflow-hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-3">
+        <div class="sk mb-3 h-5 w-1/3"></div>
+        <div class="space-y-3">
+          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-20"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
+          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
+          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-16"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
+          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-20"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
+          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Shown only when the Google Apps Script has a different checklist than this page (results would show under the wrong checks) -->
     <div id="script-outdated-banner" class="mb-5 hidden rounded-lg border border-fail/60 bg-fail/10 px-4 py-3 text-sm text-graphite-100" role="alert">
@@ -254,12 +329,12 @@
     </div>
 
     <!-- Which list: the finished inspections (the main table), the ones put aside, or the ones being worked on now -->
-    <div id="view-tabs" class="mb-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inspections">
+    <div id="view-tabs" class="mb-3 hidden flex-wrap items-center gap-2" role="tablist" aria-label="Inspections">
       <button type="button" role="tab" data-view="finished" class="view-tab" aria-selected="true">Finished inspections</button>
       <button type="button" role="tab" data-view="unfinished" class="view-tab" aria-selected="false">Unfinished inspections <span id="count-unfinished" class="tab-count">0</span></button>
       <button type="button" role="tab" data-view="progress" class="view-tab" aria-selected="false">In progress inspections <span id="count-progress" class="tab-count">0</span></button>
     </div>
-    <h2 id="table-title" class="mb-2 text-base font-semibold text-graphite-100">Finished inspections</h2>
+    <h2 id="table-title" class="mb-2 hidden text-base font-semibold text-graphite-100">Finished inspections</h2>
 
     <!-- Finished inspections (the main table) -->
     <div id="table-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
@@ -305,7 +380,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-13.4</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-14.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -375,8 +450,10 @@
       if (data && data.ok && Array.isArray(data.submissions)) return data.submissions;
       throw new Error((data && data.error) || "Unexpected response");
     } catch (err) {
-      document.getElementById("load-status").textContent =
-        "Could not load submissions: " + err.message;
+      document.getElementById("skeleton").classList.add("hidden");
+      const status = document.getElementById("load-status");
+      status.className = "mb-4 text-sm text-failtext"; // (it is only read aloud while loading; an error is shown)
+      status.textContent = "Could not load submissions: " + err.message;
       return null;
     }
   }
@@ -468,6 +545,35 @@
     return groupBySerial(list).map(currentOfKiosk);
   }
 
+  // ---------- numbers that count up to their value (and only when the value changes) ----------
+  const reduceMotion = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  function showText(el, text) { // a state that is not a number ("–", "…")
+    cancelAnimationFrame(el.__raf);
+    el.__cur = undefined;
+    el.textContent = text;
+  }
+
+  function setCount(el, to, suffix) {
+    suffix = suffix || "";
+    const target = Number(to);
+    cancelAnimationFrame(el.__raf);
+    if (!isFinite(target) || reduceMotion() || typeof requestAnimationFrame !== "function") { el.__cur = target; el.textContent = to + suffix; return; }
+    const from = el.__cur === undefined ? 0 : el.__cur;
+    if (from === target) { el.textContent = target + suffix; return; }
+    const duration = el.__cur === undefined ? 700 : 350; // the first time a little slower, later changes quicker
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.__cur = from + (target - from) * eased;
+      el.textContent = Math.round(el.__cur) + suffix;
+      if (t < 1) el.__raf = requestAnimationFrame(step);
+      else { el.__cur = target; el.textContent = target + suffix; }
+    };
+    el.__raf = requestAnimationFrame(step);
+  }
+
   function renderStats(data) {
     const kiosks = latestPerKiosk(data);
     let totalPass = 0, totalFail = 0;
@@ -479,9 +585,9 @@
     const total = totalPass + totalFail;
     const passRate = total > 0 ? Math.round((totalPass / total) * 100) : 0;
 
-    document.getElementById("stat-kiosks").textContent = kiosks.length;
-    document.getElementById("stat-passrate").textContent = passRate + "%";
-    document.getElementById("stat-fails").textContent = totalFail;
+    setCount(document.getElementById("stat-kiosks"), kiosks.length);
+    setCount(document.getElementById("stat-passrate"), passRate, "%");
+    setCount(document.getElementById("stat-fails"), totalFail);
     renderShippedStat();
     updateScriptBanner(data);
   }
@@ -634,11 +740,11 @@
     const subEl = document.getElementById("stat-shipped-sub");
     const barEl = document.getElementById("stat-shipped-bar");
     if (shipState === "ready") {
-      numEl.textContent = shipped;
+      setCount(numEl, shipped);
       subEl.textContent = `of ${kiosks.size} QA'd kiosks · ${kiosks.size - shipped} still to ship`;
       barEl.style.width = (kiosks.size ? Math.round((shipped / kiosks.size) * 100) : 0) + "%";
     } else {
-      numEl.textContent = shipState === "loading" ? "…" : "–";
+      showText(numEl, shipState === "loading" ? "…" : "–");
       subEl.textContent = shipState === "unsupported" ? "Update the Apps Script to track shipping"
         : shipState === "error" ? "Couldn't load the shipping status — retrying" : "Loading…";
       barEl.style.width = "0%";
@@ -713,6 +819,7 @@
   // waiting are marked "Waiting". The marks and notes live in the Sheet (the "Final check" tab), so everyone
   // sees the same. No names are kept. The comment written at the QA itself is never changed.
   // ---------------------------------------------------------------------
+  const justDone = new Set();     // kiosks whose final check has JUST turned done: their badge pops and the row flashes once
   let finalMap = new Map();       // SERIAL -> { done, at, note } for every kiosk that has a final-check record
   let finalState = "loading";     // "loading" | "ready" | "unsupported" (older Apps Script) | "error"
 
@@ -750,29 +857,30 @@
     const disabled = finalState !== "ready" ? "disabled" : "";
     const dis = "disabled:cursor-not-allowed disabled:opacity-50";
     if (isFinalDone(key)) {
-      return `<div data-final-state="done"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalState === "ready" ? "Final check done — press to open it" : finalTitle())}" class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass hover:opacity-80 ${dis}">✓ Done</button></div>`;
+      return `<div data-final-state="done"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalState === "ready" ? "Final check done — press to open it" : finalTitle())}" class="badge badge-pass ${justDone.has(key) ? "final-pop" : ""} ${dis}">✓ Done</button></div>`;
     }
     if (isShipped(key)) {
       return `<div data-final-state="shipped"><span class="text-graphite-500" title="Already shipped: no final check is needed">—</span></div>`;
     }
-    return `<div data-final-state="waiting"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-200 hover:border-leaf-500 hover:text-leaf-500 ${dis}">Final check</button></div>`;
+    return `<div data-final-state="waiting"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="badge badge-wait ${dis}">Final check</button></div>`;
   }
 
   // "Waiting for final check" in the overview: QA'd kiosks that are not shipped and not final-checked yet.
   function renderFinalStat() {
     const el = document.getElementById("stat-waiting");
     if (!el) return;
-    if (finalState !== "ready") { el.textContent = finalState === "loading" ? "…" : "–"; return; }
+    if (finalState !== "ready") { showText(el, finalState === "loading" ? "…" : "–"); return; }
     const kiosks = new Set(allSubmissions.map((s) => serialKey(s.serial)).filter(Boolean));
     let waiting = 0;
     kiosks.forEach((k) => { if (needsFinal(k)) waiting++; });
-    el.textContent = waiting;
+    setCount(el, waiting);
   }
 
   // The server's list is the truth. (An entry from the first version of the Apps Script has no "done": it was a done one.)
   function applyFinalList(list) {
     const next = new Map();
     list.forEach((x) => { if (x && x.serial) next.set(serialKey(x.serial), { done: x.done !== false, at: x.at || "", by: x.by || "", note: x.note || "", noteBy: x.noteBy || "" }); });
+    if (finalState === "ready") next.forEach((m, k) => { if (m.done && !isFinalDone(k)) justDone.add(k); }); // (not for what was there from the start)
     finalMap = next;
   }
 
@@ -1162,13 +1270,13 @@
       .map((s, i) => {
         const { pass, fail } = countResults(s);
         return `
-          <tr${justFinished.has((s.serial || "").toUpperCase()) ? ' class="just-finished"' : ""}>
+          <tr${(() => { const c = [justFinished.has((s.serial || "").toUpperCase()) ? "just-finished" : "", justDone.has(serialKey(s.serial)) ? "final-flash" : ""].filter(Boolean).join(" "); return c ? ` class="${c}"` : ""; })()}>
             <td>${shipBoxHtml(s.serial)}</td>
             <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
             <td>${escapeHtml(s.technician)}</td>
             <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
-            <td><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">${pass}</span></td>
-            <td><span class="rounded px-1.5 py-0.5 text-xs font-medium ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
+            <td><span class="badge badge-pass">${pass}</span></td>
+            <td><span class="badge ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
             <td>${finalCellHtml(s.serial)}</td>
             <td class="whitespace-nowrap">
               <button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button>
@@ -1179,6 +1287,7 @@
       .join("");
     const focusedShip = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.shipSerial : null;
     tbody.innerHTML = doneHtml;
+    justDone.clear(); // the pop plays once: later redraws do not repeat it
     if (focusedShip) focusShipBox(focusedShip); // a redraw must not drop the keyboard focus
   }
 
@@ -1245,8 +1354,8 @@
 
   const resultWord = (v) => (v === "pass" ? "Pass" : v === "fail" ? "Fail" : "—");
   const resultBadge = (v) =>
-    v === "pass" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">Pass</span>' :
-    v === "fail" ? '<span class="rounded px-1.5 py-0.5 text-xs font-medium badge-fail">Fail</span>' :
+    v === "pass" ? '<span class="badge badge-pass">Pass</span>' :
+    v === "fail" ? '<span class="badge badge-fail">Fail</span>' :
     '<span class="text-xs text-graphite-500">—</span>';
 
   function formatWhen(iso) {
@@ -1261,18 +1370,31 @@
 
   // Opening a window locks the page behind it (without the page jumping sideways when its scrollbar goes away);
   // the mouse wheel over the dark area around the window scrolls the window, so it works wherever the mouse is.
+  let modalCloseTimer = null;
+
   function showDetailModal() {
     const root = document.documentElement;
+    const modal = document.getElementById("detail-modal");
     const bar = root.clientWidth > 0 ? window.innerWidth - root.clientWidth : 0;
     if (!root.classList.contains("modal-open")) document.body.style.paddingRight = bar > 0 ? bar + "px" : "";
     root.classList.add("modal-open");
-    document.getElementById("detail-modal").classList.add("open");
+    clearTimeout(modalCloseTimer);
+    modal.classList.remove("closing"); // (opened again while it was still fading out)
+    modal.classList.add("open");
   }
 
+  // The window is closed at once (the page is unlocked); a short fade-out plays while "closing" is set.
   function hideDetailModal() {
-    document.getElementById("detail-modal").classList.remove("open");
+    const modal = document.getElementById("detail-modal");
+    const wasOpen = modal.classList.contains("open");
+    modal.classList.remove("open");
     document.documentElement.classList.remove("modal-open");
     document.body.style.paddingRight = "";
+    if (wasOpen) {
+      modal.classList.add("closing");
+      clearTimeout(modalCloseTimer);
+      modalCloseTimer = setTimeout(() => modal.classList.remove("closing"), 170);
+    }
   }
 
   document.getElementById("detail-modal").addEventListener("wheel", (e) => {
@@ -1330,26 +1452,25 @@
     const saved = (sub.checklist[step] || [])[idx];
     if (saved !== "pass" && saved !== "fail") return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(saved)}</div>`;
     const eff = finalEdits[k] !== undefined ? finalEdits[k] : saved;
-    const sw = (v) => `<button type="button" data-edit-key="${k}" data-edit-val="${v}" aria-pressed="${eff === v}" class="rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
-      eff === v ? (v === "pass" ? "badge-pass" : "badge-fail") + " border border-transparent" : "border border-graphite-600 text-graphite-400 hover:border-leaf-500 hover:text-graphite-200"
-    }">${v === "pass" ? "Pass" : "Fail"}</button>`;
+    const btn = (v) => `<button type="button" data-edit-key="${k}" data-edit-val="${v}" aria-pressed="${eff === v}" class="sw-btn">${v === "pass" ? "Pass" : "Fail"}</button>`;
     return `<div data-edit-row="${k}" class="flex items-center justify-between gap-3 py-1 text-sm">
-      <span class="text-graphite-300">${escapeHtml(label)}${eff !== saved ? `<span class="ml-2 text-xs text-graphite-500">was ${resultWord(saved)}</span>` : ""}</span>
-      <span class="flex gap-1">${sw("pass")}${sw("fail")}</span>
+      <span class="text-graphite-300">${escapeHtml(label)}<span data-edit-was class="ml-2 text-xs text-graphite-500">${eff !== saved ? `was ${resultWord(saved)}` : ""}</span></span>
+      <span class="sw" data-sw="${eff}" role="group" aria-label="Result of ${attr(label)}">${btn("pass")}${btn("fail")}</span>
     </div>`;
   }
 
-  // A switch was pressed: only that row, the failed list and the buttons change (the note being typed stays untouched).
+  // A switch was pressed: the row is changed IN PLACE (so the highlight slides over), then the failed list and the buttons follow.
   function setFinalEdit(k, val) {
     if (finalSaving || !currentDetail) return;
-    if (val === savedResult(currentDetail, k)) delete finalEdits[k]; else finalEdits[k] = val;
+    const saved = savedResult(currentDetail, k);
+    if (val === saved) delete finalEdits[k]; else finalEdits[k] = val;
     finalWarned = false;
-    const [step, idx] = k.split(":");
+    const eff = finalEdits[k] !== undefined ? finalEdits[k] : saved;
     const row = document.querySelector(`[data-edit-row="${k}"]`);
     if (row) {
-      row.outerHTML = editRowHtml(currentDetail, step, Number(idx), SECTIONS[step].items[Number(idx)]);
-      const again = document.querySelector(`[data-edit-key="${k}"][data-edit-val="${val}"]`);
-      if (again) again.focus({ preventScroll: true });
+      row.querySelector(".sw").dataset.sw = eff;
+      row.querySelectorAll("[data-edit-val]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.editVal === eff)));
+      row.querySelector("[data-edit-was]").textContent = eff !== saved ? `was ${resultWord(saved)}` : "";
     }
     paintFinalSummary();
     updateFinalButtons();
@@ -1380,7 +1501,7 @@
     const done = isFinalDone(key);
     const note = finalNoteOf(key);
     let html = `<div><p class="${LABEL_CLS}">Final check</p>`;
-    if (done) html += `<p class="text-sm"><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>`;
+    if (done) html += `<p class="text-sm"><span class="badge badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>`;
     else if (isShipped(key)) html += `<p class="text-sm text-graphite-400">Already shipped: no final check was needed.</p>`;
     else html += `<p class="text-sm text-graphite-300">Waiting for the final check.</p>`;
     if (note) {
@@ -1399,7 +1520,7 @@
     const names = PEOPLE.map((n) => `<option value="${attr(n)}"${finalWho === n ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
     return `<div class="rounded-lg border border-graphite-600 bg-graphite-800/60 p-3">
       <p class="${LABEL_CLS}">Final check</p>
-      ${done ? `<p class="text-sm"><span class="rounded px-1.5 py-0.5 text-xs font-medium badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>` : ""}
+      ${done ? `<p class="text-sm"><span class="badge badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>` : ""}
       <label for="final-who" class="${done ? "mt-3" : "mt-1"} block text-sm text-graphite-300">Your name <span class="text-failtext" aria-hidden="true">*</span> <span class="text-graphite-500">— saved with the final check</span></label>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <select id="final-who" class="${field}">
@@ -1561,6 +1682,13 @@
     if (!tab || tab.dataset.view === view) return;
     view = tab.dataset.view;
     renderView();
+    // whatever is shown for this list (the table, or the message that it is empty) fades in
+    ["table-card", "drafts-card", "empty-state"].forEach((id) => {
+      const el = document.getElementById(id);
+      el.classList.remove("view-enter");
+      void el.offsetWidth; // (so the animation can play again)
+      el.classList.add("view-enter");
+    });
   });
 
   // "Load more" always adds another page of 20 (or whatever is left, if that is less).
@@ -1664,6 +1792,10 @@
     dataLoaded = true; // from now on the table (finished and in-progress rows) can be drawn
 
     document.getElementById("load-status").classList.add("hidden");
+    document.getElementById("skeleton").classList.add("hidden");
+    document.getElementById("view-tabs").classList.remove("hidden");
+    document.getElementById("view-tabs").classList.add("flex"); // (they stay out of sight until there is something to show)
+    document.getElementById("table-title").classList.remove("hidden");
     document.getElementById("stats-grid").classList.remove("hidden");
     document.getElementById("stats-grid").classList.add("grid");
     document.getElementById("technicians-card").classList.remove("hidden");
