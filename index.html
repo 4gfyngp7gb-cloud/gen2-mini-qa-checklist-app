@@ -6,6 +6,25 @@
   // Apply the saved theme before anything is drawn, so the page never flashes the wrong one.
   (function () { try { var t = localStorage.getItem("qaTheme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {} })();
 </script>
+<script>
+  // Decided before anything is drawn: does this page have to ask for the access code? It is worked out from what is
+  // remembered here. If no code is known in this tab (or, on the dashboard in the "visit" setting, no fresh pass), and the
+  // Apps Script had a code set the last time (or this is the first visit), the code window is there AT ONCE and nothing else
+  // is shown. The Apps Script is not waited for; it is asked alongside.
+  (function () {
+    var root = document.documentElement;
+    try {
+      var DASH = true;
+      var code = sessionStorage.getItem("qaAccessCode") || localStorage.getItem("qaAccessCode");
+      var needed = localStorage.getItem("qaAccessNeeded");
+      var mode = localStorage.getItem("qaAccessMode");
+      var passTime = Number(sessionStorage.getItem("qaAccessPass")) || 0;
+      var pass = passTime > 0 && Date.now() - passTime < 120000;
+      var typing = !code || (DASH && mode === "visit" && !pass);
+      if (needed !== "0" && typing) root.classList.add("gate-pending");
+    } catch (e) { root.classList.add("gate-pending"); }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gen2 Mini QA Dashboard</title>
 
@@ -176,9 +195,14 @@
   }
 
   /* the window that asks for the access code */
-  #access-gate { display: none; }
-  #access-gate.open { display: flex; }
-  html.gate-open { overflow: hidden; }
+  #access-gate {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 60;
+    align-items: center; justify-content: center; padding: 1rem; background-color: rgb(var(--g-950));
+  }
+  #access-gate.open, html.gate-pending #access-gate { display: flex; }
+  html.gate-open, html.gate-pending { overflow: hidden; }
+  /* while the code is still to be typed, NOTHING but the code window is shown (no placeholders, no data) */
+  html.gate-pending body > *:not(#access-gate) { visibility: hidden; }
   ::-webkit-scrollbar { height: 8px; width: 8px; }
   ::-webkit-scrollbar-thumb { background: rgb(var(--g-600)); border-radius: 4px; }
   /* show the icon of the theme you would switch TO */
@@ -385,7 +409,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-16.2</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-17.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -487,6 +511,11 @@
     });
   };
 
+  // what the Apps Script last said is kept here, so that the NEXT visit can decide before anything is drawn
+  function rememberAccessInfo(needed, mode) {
+    try { localStorage.setItem("qaAccessNeeded", needed); if (mode) localStorage.setItem("qaAccessMode", mode); } catch (e) { /* ignore */ }
+  }
+
   // "open" (no code needed) | "valid" | "invalid" | "unknown" (no connection, or a script that does not have codes yet: nothing is asked)
   async function checkAccessNow(candidate) {
     try {
@@ -494,8 +523,9 @@
       const res = await rawFetch(`${WEBHOOK_URL}?action=checkAccess&code=${encodeURIComponent(code)}`);
       const d = await res.json();
       if (!d || d.ok !== true) return "unknown";
-      if (!d.required) return "open";
+      if (!d.required) { rememberAccessInfo("0", ""); return "open"; }
       if (d.mode) accessMode = d.mode;
+      rememberAccessInfo("1", d.mode || "");
       return d.valid ? "valid" : "invalid";
     } catch (e) {
       return "unknown";
@@ -503,6 +533,11 @@
   }
 
   let accessGate = null;
+  let finishGateFn = null;
+  function closeAccessGate() {
+    if (finishGateFn) finishGateFn();
+    document.documentElement.classList.remove("gate-pending");
+  }
   // The window that asks for the code. It covers the whole page (nothing behind it can be read), and goes away
   // when a right code has been entered. Asked again while it is open, it is the same window.
   function askForAccessCode(message) {
@@ -518,6 +553,15 @@
     input.value = "";
     input.focus();
     accessGate = new Promise((resolve) => {
+      finishGateFn = () => {
+        form.removeEventListener("submit", onSubmit);
+        gate.classList.remove("open");
+        document.documentElement.classList.remove("gate-open", "gate-pending");
+        err.classList.add("hidden");
+        accessGate = null;
+        finishGateFn = null;
+        resolve();
+      };
       const onSubmit = async (e) => {
         e.preventDefault();
         const code = input.value.trim();
@@ -529,12 +573,7 @@
         submitBtn.textContent = "Enter";
         if (state === "valid" || state === "open") {
           storeAccessCode(code);
-          form.removeEventListener("submit", onSubmit);
-          gate.classList.remove("open");
-          document.documentElement.classList.remove("gate-open");
-          err.classList.add("hidden");
-          accessGate = null;
-          resolve();
+          finishGateFn();
         } else if (state === "invalid") {
           err.textContent = "That code is not right.";
           err.classList.remove("hidden");
@@ -550,23 +589,49 @@
     return accessGate;
   }
 
-  // Resolves when the page may talk to the Apps Script: no code is needed, or the right one is known (else it is asked for).
+  function passIsFresh() {
+    try { const t = Number(sessionStorage.getItem(ACCESS_PASS_KEY)); return t > 0 && Date.now() - t < 120000; } catch (e) { return false; }
+  }
+
+  // What the Apps Script's answer means for this page: "ask" (the code is typed) or "ok".
+  function decideAfterCheck(state) {
+    if (state === "open" || state === "unknown") return "ok";
+    // a code kept from an earlier setting is dropped when the setting says it must not be kept on this computer
+    if (accessMode !== "device" && readStore("localStorage")) { try { localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ } if (!readStore("sessionStorage")) state = "invalid"; }
+    // "every time the dashboard is opened": the code that is known is not enough, it is typed again —
+    // except when the person has just come back from a QA form in this tab
+    if (accessMode === "visit" && ACCESS_PAGE_IS_DASHBOARD && !takeReturnPass()) { forgetAccessCode(); state = "invalid"; }
+    return state === "invalid" ? "ask" : "ok";
+  }
+
+  // Resolves when the page may talk to the Apps Script.
+  //  - A code is known and the last answer of the Apps Script said it is enough here: the page starts AT ONCE (the Apps Script
+  //    refuses a wrong code anyway). The check runs alongside; if the code turns out to be wrong, the window comes up and the
+  //    page is started afresh once a right one has been typed.
+  //  - Otherwise the window is already up (see the <head>); the check runs while the code is being typed, and takes the window
+  //    away again by itself if no code is needed after all.
   let accessReady = null;
   function ensureAccess() {
-    if (!accessReady) {
-      accessReady = (async () => {
-        let state = await checkAccessNow(); // (this also learns how often the code is asked for)
-        if (state === "open" || state === "unknown") return;
-        // a code kept from an earlier setting is dropped when the setting says it must not be kept on this computer
-        if (accessMode !== "device" && readStore("localStorage")) { try { localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ } if (!readStore("sessionStorage")) state = "invalid"; }
-        // "every time the dashboard is opened": the code that is known is not enough, it is typed again —
-        // except when the person has just come back from a QA form in this tab
-        if (accessMode === "visit" && ACCESS_PAGE_IS_DASHBOARD && !takeReturnPass()) { forgetAccessCode(); state = "invalid"; }
-        if (state === "invalid") await askForAccessCode();
-      })();
+    if (accessReady) return accessReady;
+    let cachedMode = null;
+    try { cachedMode = localStorage.getItem("qaAccessMode"); } catch (e) { /* ignore */ }
+    const optimistic = !!getAccessCode() && !!cachedMode && (cachedMode !== "visit" || !ACCESS_PAGE_IS_DASHBOARD || passIsFresh());
+    const verify = async () => {
+      if (decideAfterCheck(await checkAccessNow()) === "ask") { await askForAccessCode(optimistic ? "The access code was changed. Please enter the new one." : undefined); return true; }
+      closeAccessGate();
+      return false;
+    };
+    if (optimistic) {
+      accessReady = Promise.resolve();
+      verify().then((asked) => { if (asked) window.location.reload(); });
+    } else {
+      accessReady = verify().then(() => {});
     }
     return accessReady;
   }
+
+  // The window is put up at once when the early decision in the <head> said so (without waiting for the Apps Script).
+  if (document.documentElement.classList.contains("gate-pending")) askForAccessCode();
 
   // Must match the app's CHECKLISTS exactly (section order + item order).
   const SECTIONS = {
