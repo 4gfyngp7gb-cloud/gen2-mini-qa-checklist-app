@@ -174,6 +174,11 @@
     table.qa-table tbody tr.final-flash td, .sk { animation: none !important; }
     .sw::before, .sw-btn, button.badge, #stat-shipped-bar { transition: none !important; }
   }
+
+  /* the window that asks for the access code */
+  #access-gate { display: none; }
+  #access-gate.open { display: flex; }
+  html.gate-open { overflow: hidden; }
   ::-webkit-scrollbar { height: 8px; width: 8px; }
   ::-webkit-scrollbar-thumb { background: rgb(var(--g-600)); border-radius: 4px; }
   /* show the icon of the theme you would switch TO */
@@ -380,7 +385,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-14.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-15.2</p>
   </div>
 
   <!-- Detail modal -->
@@ -398,11 +403,171 @@
     </div>
   </div>
 
+
+<!-- Asks for the team's access code (only when the Apps Script has one set). Opaque: nothing behind it can be read. -->
+<div id="access-gate" class="fixed inset-0 z-[60] items-center justify-center bg-graphite-950 p-4" role="dialog" aria-modal="true" aria-labelledby="access-title">
+  <form id="access-form" autocomplete="off" class="w-full max-w-sm rounded-lg border border-graphite-700 bg-graphite-900 p-6 shadow-xl">
+    <p class="font-mono text-xs tracking-wide text-leaf-500">HARDWARE</p>
+    <h2 id="access-title" class="mt-1 text-lg font-semibold text-graphite-100">Enter the access code</h2>
+    <p class="mt-1 text-sm text-graphite-400">Ask your team lead if you do not know it. It is remembered on this computer.</p>
+    <label for="access-input" class="sr-only">Access code</label>
+    <input id="access-input" type="password" autocomplete="off" spellcheck="false" placeholder="Access code"
+      class="mt-4 w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
+    <p id="access-error" class="mt-2 hidden text-sm text-failtext" role="alert"></p>
+    <button id="access-submit" type="submit" class="mt-4 w-full rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600 disabled:opacity-60">Enter</button>
+  </form>
+</div>
+
 <script>
 (function () {
   "use strict";
 
   const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
+
+  // =====================================================================
+  // ACCESS CODE — the Apps Script only answers to people who know the team's access code.
+  // It is asked for once (and remembered on this computer); every request carries it and the SCRIPT checks it,
+  // so this page keeps nothing secret. If no code is set in the script, nothing is asked at all.
+  // =====================================================================
+  const ACCESS_KEY = "qaAccessCode";
+  const ACCESS_PASS_KEY = "qaAccessPass";
+  const ACCESS_PAGE_IS_DASHBOARD = true;
+  // How often the code is asked for is decided in the Apps Script:
+  //   "visit"   every time the dashboard is opened (coming back from a QA form you were just working in does not ask again),
+  //   "session" once, until the tab or the browser is closed,
+  //   "device"  once; this computer then remembers it.
+  // Where the code is kept follows from that: this computer for "device", this tab only for the others.
+  let accessMode = "device";
+  const readStore = (name) => { try { return window[name].getItem(ACCESS_KEY) || ""; } catch (e) { return ""; } };
+  const getAccessCode = () => readStore("sessionStorage") || readStore("localStorage");
+  function storeAccessCode(code) {
+    try {
+      if (accessMode === "device") { localStorage.setItem(ACCESS_KEY, code); sessionStorage.removeItem(ACCESS_KEY); }
+      else { sessionStorage.setItem(ACCESS_KEY, code); localStorage.removeItem(ACCESS_KEY); }
+    } catch (e) { /* ignore */ }
+  }
+  function forgetAccessCode() {
+    try { sessionStorage.removeItem(ACCESS_KEY); localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ }
+  }
+  // The QA form leaves a short-lived "pass" when it is left, so that coming back to the dashboard from a QA does not ask again.
+  if (!ACCESS_PAGE_IS_DASHBOARD) {
+    window.addEventListener("pagehide", () => { try { if (getAccessCode()) sessionStorage.setItem(ACCESS_PASS_KEY, String(Date.now())); } catch (e) { /* ignore */ } });
+  }
+  function takeReturnPass() {
+    try {
+      const t = Number(sessionStorage.getItem(ACCESS_PASS_KEY));
+      sessionStorage.removeItem(ACCESS_PASS_KEY);
+      return t > 0 && Date.now() - t < 120000;
+    } catch (e) { return false; }
+  }
+  const rawFetch = window.fetch.bind(window);
+
+  // every request to the Apps Script gets the code added (as a URL parameter, or inside the JSON that is sent)
+  window.fetch = function (input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const code = getAccessCode();
+    if (!code || url.indexOf(WEBHOOK_URL) !== 0) return rawFetch(input, init);
+    let nextInput = input, nextInit = init;
+    if (init && typeof init.body === "string") {
+      try {
+        const body = JSON.parse(init.body);
+        if (body && typeof body === "object" && body.code === undefined) { body.code = code; nextInit = Object.assign({}, init, { body: JSON.stringify(body) }); }
+      } catch (e) { /* not JSON: sent as it is */ }
+    } else if (typeof input === "string" && !/[?&]code=/.test(url)) {
+      nextInput = url + (url.indexOf("?") === -1 ? "?" : "&") + "code=" + encodeURIComponent(code);
+    }
+    return rawFetch(nextInput, nextInit).then((res) => {
+      // an answer that says "auth: true" means the code was changed meanwhile: ask for the new one (the caller still gets its answer)
+      try {
+        if (res && res.type !== "opaque") {
+          const probe = typeof res.clone === "function" ? res.clone() : res;
+          probe.json().then((d) => { if (d && d.auth === true) askForAccessCode("The access code was changed. Please enter the new one."); }).catch(() => {});
+        }
+      } catch (e) { /* ignore */ }
+      return res;
+    });
+  };
+
+  // "open" (no code needed) | "valid" | "invalid" | "unknown" (no connection, or a script that does not have codes yet: nothing is asked)
+  async function checkAccessNow(candidate) {
+    try {
+      const code = candidate === undefined ? getAccessCode() : candidate;
+      const res = await rawFetch(`${WEBHOOK_URL}?action=checkAccess&code=${encodeURIComponent(code)}`);
+      const d = await res.json();
+      if (!d || d.ok !== true) return "unknown";
+      if (!d.required) return "open";
+      if (d.mode) accessMode = d.mode;
+      return d.valid ? "valid" : "invalid";
+    } catch (e) {
+      return "unknown";
+    }
+  }
+
+  let accessGate = null;
+  // The window that asks for the code. It covers the whole page (nothing behind it can be read), and goes away
+  // when a right code has been entered. Asked again while it is open, it is the same window.
+  function askForAccessCode(message) {
+    const gate = document.getElementById("access-gate");
+    const input = document.getElementById("access-input");
+    const err = document.getElementById("access-error");
+    const submitBtn = document.getElementById("access-submit");
+    const form = document.getElementById("access-form");
+    if (message) { err.textContent = message; err.classList.remove("hidden"); } else { err.classList.add("hidden"); }
+    if (accessGate) return accessGate;
+    gate.classList.add("open");
+    document.documentElement.classList.add("gate-open");
+    input.value = "";
+    input.focus();
+    accessGate = new Promise((resolve) => {
+      const onSubmit = async (e) => {
+        e.preventDefault();
+        const code = input.value.trim();
+        if (!code) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Checking…";
+        const state = await checkAccessNow(code);
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Enter";
+        if (state === "valid" || state === "open") {
+          storeAccessCode(code);
+          form.removeEventListener("submit", onSubmit);
+          gate.classList.remove("open");
+          document.documentElement.classList.remove("gate-open");
+          err.classList.add("hidden");
+          accessGate = null;
+          resolve();
+        } else if (state === "invalid") {
+          err.textContent = "That code is not right.";
+          err.classList.remove("hidden");
+          input.value = ""; // (so it can simply be typed again)
+          input.focus();
+        } else {
+          err.textContent = "Couldn't reach the server. Check the connection and try again.";
+          err.classList.remove("hidden");
+        }
+      };
+      form.addEventListener("submit", onSubmit);
+    });
+    return accessGate;
+  }
+
+  // Resolves when the page may talk to the Apps Script: no code is needed, or the right one is known (else it is asked for).
+  let accessReady = null;
+  function ensureAccess() {
+    if (!accessReady) {
+      accessReady = (async () => {
+        let state = await checkAccessNow(); // (this also learns how often the code is asked for)
+        if (state === "open" || state === "unknown") return;
+        // a code kept from an earlier setting is dropped when the setting says it must not be kept on this computer
+        if (accessMode !== "device" && readStore("localStorage")) { try { localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ } if (!readStore("sessionStorage")) state = "invalid"; }
+        // "every time the dashboard is opened": the code that is known is not enough, it is typed again —
+        // except when the person has just come back from a QA form in this tab
+        if (accessMode === "visit" && ACCESS_PAGE_IS_DASHBOARD && !takeReturnPass()) { forgetAccessCode(); state = "invalid"; }
+        if (state === "invalid") await askForAccessCode();
+      })();
+    }
+    return accessReady;
+  }
 
   // Must match the app's CHECKLISTS exactly (section order + item order).
   const SECTIONS = {
@@ -1779,6 +1944,7 @@
   });
 
   (async function init() {
+    await ensureAccess(); // nothing is read from the Apps Script before the access code (if there is one) is known
     loadPeople();       // the names offered in the final check window
     refreshLive();      // drafts + shipped marks; independent of submissions, so don't block on it
 
