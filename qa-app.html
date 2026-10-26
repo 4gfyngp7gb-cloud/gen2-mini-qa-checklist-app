@@ -285,6 +285,10 @@
 
 
 
+  /* the Test Order box under the camera check: quiet until it is looked at or filled in */
+  .test-order-input { opacity: 0.6; transition: opacity 150ms ease, border-color 150ms ease; }
+  .test-order-input:hover, .test-order-input:focus, .test-order-input:not(:placeholder-shown) { opacity: 1; }
+
   /* the window that asks for the access code */
   #access-gate {
     display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 60;
@@ -442,7 +446,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-17.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-19.1</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -992,6 +996,7 @@
   let serialValues = new Array(SERIAL_COUNT).fill("");
   let kioskAnswers = []; // kioskAnswers[k][step] = ["pass"|"fail"|null, ...]
   let kioskComments = new Array(SERIAL_COUNT).fill("");
+  let kioskTestOrders = new Array(SERIAL_COUNT).fill(""); // the link to where the camera was looked at, one per kiosk (see TEST ORDER)
 
   function freshAnswerSet() {
     const set = {};
@@ -1222,6 +1227,7 @@
     const idx = kioskCount;
     kioskAnswers[idx] = freshAnswerSet();
     kioskComments[idx] = kioskComments[idx] || "";
+    kioskTestOrders[idx] = kioskTestOrders[idx] || "";
     kioskCount += 1;
     addSerialField(idx, true);
     updateAddRemoveVisibility();
@@ -1239,6 +1245,8 @@
     serialValues.push("");
     kioskComments.splice(index, 1);
     kioskComments.push("");
+    kioskTestOrders.splice(index, 1);
+    kioskTestOrders.push("");
     kioskAnswers.splice(index, 1);
     kioskCount -= 1;
 
@@ -1788,7 +1796,9 @@
     const next = total > 0 && done < total
       ? `<button type="button" class="progress-chip ml-auto" data-goto-next="1" data-state="started">Next open ›</button>`
       : total > 0
-        ? `<span class="ml-auto text-sm font-medium" style="color: rgb(var(--pass-text))">✓ All checks answered</span>`
+        ? (missingTestOrderKiosk() !== null
+            ? `<button type="button" class="progress-chip ml-auto" data-goto-link="1" data-state="started">Test Order link needed ›</button>`
+            : `<span class="ml-auto text-sm font-medium" style="color: rgb(var(--pass-text))">✓ All checks answered</span>`)
         : "";
     const html = stats.map(chipHtml).join("") + failChip + next;
     if (html !== lastChipsHtml) {
@@ -1837,6 +1847,7 @@
     if (stepBtn) goToSection(stepBtn.dataset.gotoStep);
     else if (e.target.closest("[data-goto-fail]")) goToNextFail();
     else if (e.target.closest("[data-goto-next]")) goToNextOpen();
+    else if (e.target.closest("[data-goto-link]")) goToMissingTestOrder();
   });
 
   matrixRoot.addEventListener("click", (e) => {
@@ -1918,6 +1929,131 @@
         </button>
       </div>
     `;
+  }
+
+  // ---------------------------------------------------------------------
+  // TEST ORDER — under the camera check: a quiet box for the link to the page where the camera was looked at.
+  // It is not a check of its own (it has no Pass/Fail and never holds anything up), one box per kiosk.
+  // ---------------------------------------------------------------------
+  const TEST_ORDER_ITEM = "Camera quality & correct FOV"; // the check it belongs to (Functional checks)
+
+  function looksLikeLink(v) {
+    try { const u = new URL(v); return u.protocol === "http:" || u.protocol === "https:"; } catch (e) { return false; }
+  }
+
+  // "orders.example.com/test/1" is made "https://orders.example.com/test/1"; anything else stays as it was typed.
+  function tidyTestOrder(v) {
+    v = (v || "").trim();
+    if (v && !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^[^\s\/]+\.[^\s\/]+(\/\S*)?$/.test(v)) return "https://" + v;
+    return v;
+  }
+
+  const TEST_ORDER_LABEL = "Kiosk serial"; // what is shown instead of the (long) link
+
+  function testOrderRowHtml(kiosks) {
+    let cells = "";
+    kiosks.forEach((k) => {
+      cells += `<td>
+        <input type="text" inputmode="url" autocomplete="off" spellcheck="false" data-test-order-kiosk="${k}" data-step="2"
+          aria-label="Test Order link for ${kioskLabel(k)} (required)" placeholder="Paste the link…"
+          class="test-order-input w-full min-w-[96px] rounded border border-graphite-700 bg-transparent px-2 py-1 text-xs text-graphite-300 placeholder-graphite-600 focus:border-leaf-500" />
+        <div data-test-order-chip="${k}" class="hidden">
+          <div class="flex items-center justify-between gap-1 rounded border border-graphite-700 bg-graphite-800/60 px-2 py-1 text-xs">
+            <a data-test-order-link href="#" target="_blank" rel="noopener noreferrer"
+              class="min-w-0 truncate text-graphite-200 underline decoration-graphite-600 underline-offset-2 transition hover:text-leaf-500">${TEST_ORDER_LABEL}</a>
+            <button type="button" data-test-order-clear="${k}" aria-label="Remove the Test Order link for ${kioskLabel(k)}"
+              class="flex-shrink-0 rounded px-1 text-sm leading-none text-graphite-500 transition hover:text-failtext">×</button>
+          </div>
+        </div>
+        <p data-test-order-hint="${k}" class="mt-0.5 hidden text-[11px] leading-tight text-graphite-500">Paste the full link (https://…)</p>
+      </td>`;
+    });
+    return `<tr data-test-order-row>
+      <td class="sticky-col"><span class="text-xs font-normal italic text-graphite-500">Test Order</span> <span class="text-xs text-graphite-600" title="Required">*</span></td>
+      ${cells}
+    </tr>`;
+  }
+
+  // One kiosk's cell shows the box while there is no link yet, and the short label (a clickable link) once there is.
+  function paintTestOrder(k) {
+    const input = document.querySelector(`[data-test-order-kiosk="${k}"]`);
+    const chip = document.querySelector(`[data-test-order-chip="${k}"]`);
+    if (!input || !chip) return;
+    const link = tidyTestOrder(kioskTestOrders[k]);
+    const isLink = looksLikeLink(link);
+    input.classList.toggle("hidden", isLink);
+    chip.classList.toggle("hidden", !isLink);
+    if (isLink) {
+      const a = chip.querySelector("a");
+      a.href = link;
+      a.title = link;
+    }
+  }
+
+  // A link was pasted, or the box was left, or Enter was pressed: it is tidied up, and turned into the short label.
+  function commitTestOrder(k) {
+    const input = document.querySelector(`[data-test-order-kiosk="${k}"]`);
+    if (!input) return;
+    const tidy = tidyTestOrder(input.value);
+    input.value = tidy;
+    kioskTestOrders[k] = tidy;
+    const hint = document.querySelector(`[data-test-order-hint="${k}"]`);
+    if (hint) hint.classList.toggle("hidden", !tidy || looksLikeLink(tidy)); // a gentle note when it is not a link
+    paintTestOrder(k);
+    saveDraft();
+    updateProgress();
+  }
+
+  // The first kiosk that still has no (real) link, or null when every kiosk has one.
+  function missingTestOrderKiosk() {
+    for (const k of activeKioskIndices()) {
+      if (!looksLikeLink(tidyTestOrder(kioskTestOrders[k]))) return k;
+    }
+    return null;
+  }
+
+  function goToMissingTestOrder() {
+    const k = missingTestOrderKiosk();
+    if (k === null) return;
+    expandSection("2");
+    const el = document.querySelector(`[data-test-order-kiosk="${k}"]`);
+    if (!el) return;
+    try { el.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash-target");
+    setTimeout(() => el.classList.remove("flash-target"), 1500);
+  }
+
+  function wireTestOrderInputs() {
+    document.querySelectorAll("[data-test-order-kiosk]").forEach((input) => {
+      const k = Number(input.dataset.testOrderKiosk);
+      const hint = document.querySelector(`[data-test-order-hint="${k}"]`);
+      input.value = kioskTestOrders[k] || "";
+      paintTestOrder(k);
+      input.addEventListener("input", () => {
+        kioskTestOrders[k] = input.value; // typed text is kept as it is; it becomes the label when it is committed
+        hint.classList.add("hidden");
+        saveDraft();
+        updateProgress();
+      });
+      input.addEventListener("paste", () => setTimeout(() => commitTestOrder(k), 0)); // a pasted link turns into the label at once
+      input.addEventListener("blur", () => commitTestOrder(k));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); commitTestOrder(k); } // (Enter never submits the QA)
+      });
+    });
+    document.querySelectorAll("[data-test-order-clear]").forEach((btn) => {
+      const k = Number(btn.dataset.testOrderClear);
+      btn.addEventListener("click", () => { // take the link away: the box is there again, ready for another
+        const input = document.querySelector(`[data-test-order-kiosk="${k}"]`);
+        input.value = "";
+        kioskTestOrders[k] = "";
+        paintTestOrder(k);
+        saveDraft();
+        updateProgress();
+        input.focus();
+      });
+    });
   }
 
   function rebuildMatrix() {
@@ -2012,6 +2148,7 @@
             ${cols}
           </tr>
         `;
+        if (step === "2" && label === TEST_ORDER_ITEM) bodyRows += testOrderRowHtml(activeKiosks); // (not a check: just a place for the link)
       });
 
       card.innerHTML = `
@@ -2053,6 +2190,8 @@
       matrixRoot.appendChild(card);
       updateSectionCounter(step);
     });
+
+    wireTestOrderInputs();
 
     // Wire up click + keyboard handlers for every cell
     document.querySelectorAll(".qa-row[data-kiosk]").forEach((cell) => {
@@ -2213,6 +2352,7 @@
     serialValues = new Array(SERIAL_COUNT).fill("");
     kioskAnswers = [freshAnswerSet()];
     kioskComments = new Array(SERIAL_COUNT).fill("");
+    kioskTestOrders = new Array(SERIAL_COUNT).fill("");
 
     serialInputsWrap.innerHTML = "";
     addSerialField(0, false);
@@ -2358,6 +2498,7 @@
       serialValues,
       kioskAnswers,
       kioskComments,
+      kioskTestOrders,
       savedAt: nextSavedAt(),
       elapsedSec: currentElapsedSec(),
       checklistVersion: CHECKLIST_VERSION, // which edition of the checklist these answers belong to
@@ -2593,6 +2734,10 @@
       draft.kioskComments && draft.kioskComments.length === SERIAL_COUNT
         ? draft.kioskComments.slice()
         : new Array(SERIAL_COUNT).fill("");
+    kioskTestOrders =
+      draft.kioskTestOrders && draft.kioskTestOrders.length === SERIAL_COUNT
+        ? draft.kioskTestOrders.map((v) => String(v || ""))
+        : new Array(SERIAL_COUNT).fill("");
 
     kioskAnswers = [];
     for (let k = 0; k < kioskCount; k++) {
@@ -2676,6 +2821,20 @@
       }
     }
 
+    // The Test Order link (under the camera check) is needed for every kiosk: a real link, not just any text.
+    for (const k of activeKioskIndices()) {
+      if (!looksLikeLink(tidyTestOrder(kioskTestOrders[k]))) {
+        const typed = (kioskTestOrders[k] || "").trim() !== "";
+        return {
+          ok: false,
+          focusEl: document.querySelector(`[data-test-order-kiosk="${k}"]`),
+          message: typed
+            ? `The Test Order for ${kioskLabel(k)} is not a link: please paste the full link (starting with https://), under the camera check.`
+            : `Please paste the Test Order link for ${kioskLabel(k)} (under the camera check in ${CHECKLISTS["2"].title}).`,
+        };
+      }
+    }
+
     for (const step of SCREW_CHECK_STEPS) {
       if (isSectionComplete(step) && !screwsConfirmed[step]) {
         openScrewModal(step);
@@ -2704,6 +2863,7 @@
         serial: serialValues[k],
         checklist,
         comment: (kioskComments[k] || "").trim(),
+        testOrder: tidyTestOrder(kioskTestOrders[k] || ""),
       };
     });
 
@@ -2803,7 +2963,7 @@
 
   function hasAnyEntry() {
     const anySerial = serialValues.some((v) => v && v.trim());
-    const anyComment = kioskComments.some((v) => v && v.trim());
+    const anyComment = kioskComments.some((v) => v && v.trim()) || kioskTestOrders.some((v) => v && v.trim());
     const anyAnswer = kioskAnswers.some((k) => k && SECTION_KEYS.some((step) => (k[step] || []).some((v) => v !== null)));
     return anySerial || anyComment || anyAnswer;
   }
