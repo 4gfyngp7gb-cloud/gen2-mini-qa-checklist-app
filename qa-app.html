@@ -446,7 +446,7 @@
 
       </main>
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-19.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-20.1</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -1948,7 +1948,8 @@
     return v;
   }
 
-  const TEST_ORDER_LABEL = "Kiosk serial"; // what is shown instead of the (long) link
+  // What is shown instead of the (long) link is the kiosk's own serial number (kioskLabel): the link text follows the
+  // serial, because every change of a serial redraws the columns.
 
   function testOrderRowHtml(kiosks) {
     let cells = "";
@@ -1960,7 +1961,7 @@
         <div data-test-order-chip="${k}" class="hidden">
           <div class="flex items-center justify-between gap-1 rounded border border-graphite-700 bg-graphite-800/60 px-2 py-1 text-xs">
             <a data-test-order-link href="#" target="_blank" rel="noopener noreferrer"
-              class="min-w-0 truncate text-graphite-200 underline decoration-graphite-600 underline-offset-2 transition hover:text-leaf-500">${TEST_ORDER_LABEL}</a>
+              class="min-w-0 truncate font-mono text-graphite-200 underline decoration-graphite-600 underline-offset-2 transition hover:text-leaf-500">${kioskLabel(k)}</a>
             <button type="button" data-test-order-clear="${k}" aria-label="Remove the Test Order link for ${kioskLabel(k)}"
               class="flex-shrink-0 rounded px-1 text-sm leading-none text-graphite-500 transition hover:text-failtext">×</button>
           </div>
@@ -1985,8 +1986,10 @@
     chip.classList.toggle("hidden", !isLink);
     if (isLink) {
       const a = chip.querySelector("a");
+      a.textContent = kioskLabel(k); // the kiosk's serial number, e.g. M-AAAAA
       a.href = link;
       a.title = link;
+      a.setAttribute("aria-label", `Open the Test Order of ${kioskLabel(k)}`);
     }
   }
 
