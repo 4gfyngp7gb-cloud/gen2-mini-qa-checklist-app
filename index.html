@@ -409,7 +409,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-17.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-19.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -1773,6 +1773,33 @@
     </div>`;
   }
 
+  // ---------- Test Order: the link to the page where the camera was looked at ----------
+  // Shown (faint) under the camera check in Details and in the final check window. Only http(s) links can be clicked;
+  // anything else that was typed is shown as plain text, so nothing a person types can run as a link.
+  const TEST_ORDER_ITEM = "Camera quality & correct FOV";
+  const TEST_ORDER_LABEL = "Kiosk serial"; // what is shown instead of the (long) link; the whole link is in its tooltip
+
+  function safeLink(value) {
+    try {
+      const u = new URL(String(value || "").trim());
+      return u.protocol === "http:" || u.protocol === "https:" ? u.href : "";
+    } catch (e) { return ""; }
+  }
+
+  const linkAttr = (v) => escapeHtml(v).replace(/"/g, "&quot;"); // for an attribute: & < > and quotes are all made harmless
+
+  function testOrderHtml(value) {
+    const raw = String(value || "").trim();
+    let body = `<span class="text-graphite-600">—</span>`;
+    if (raw) {
+      const href = safeLink(raw);
+      body = href
+        ? `<a href="${linkAttr(href)}" target="_blank" rel="noopener noreferrer" title="${linkAttr(href)}" class="underline decoration-graphite-600 underline-offset-2 transition hover:text-leaf-500">${TEST_ORDER_LABEL}</a>`
+        : `<span class="break-all" title="${linkAttr(raw)}">${escapeHtml(raw)}</span>`;
+    }
+    return `<div data-test-order class="flex items-center justify-between gap-3 py-0.5 pl-3 text-xs text-graphite-500"><span class="italic">Test Order</span><span class="min-w-0 text-right text-graphite-400">${body}</span></div>`;
+  }
+
   function renderDetailsBody(sub) {
     const key = serialKey(sub.serial);
     const failed = failedLabels(sub);
@@ -1803,9 +1830,15 @@
       const section = SECTIONS[step];
       const rows = section.items
         .map((label, idx) => {
-          if (detailMode === "final") return editRowHtml(sub, step, idx, label); // the results can be changed here
-          const val = (sub.checklist[step] || [])[idx];
-          return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
+          let row;
+          if (detailMode === "final") {
+            row = editRowHtml(sub, step, idx, label); // the results can be changed here
+          } else {
+            const val = (sub.checklist[step] || [])[idx];
+            row = `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
+          }
+          // the camera check is followed by the link to where the camera was looked at
+          return step === "2" && label === TEST_ORDER_ITEM ? row + testOrderHtml(sub.testOrder) : row;
         })
         .join("");
       html += `<div><p class="${LABEL_CLS}">${escapeHtml(section.title)}</p>${rows}</div>`;
