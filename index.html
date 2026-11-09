@@ -233,12 +233,14 @@
           </svg>
           Open sheet
         </a>
-        <a href="qa-app.html?start=1" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
+        <a id="btn-start-qa1" href="qa-app.html?mode=qa1&start=1" title="The restart rounds, for several kiosks at once" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
           </svg>
-          Start QA process
+          Start QA1
         </a>
+        <button id="btn-start-qa2" type="button" title="Pick a kiosk that has finished QA1" class="rounded-md border border-graphite-600 px-4 py-2 text-sm font-semibold text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Start QA2</button>
+        <a id="btn-full-qa" href="qa-app.html?start=1" title="Every check in one go (the old way)" class="px-1 text-xs text-graphite-500 underline underline-offset-2 transition hover:text-graphite-300">Full QA</a>
       </div>
     </header>
 
@@ -287,6 +289,10 @@
         <div class="flex items-baseline justify-between gap-4 px-5 py-3">
           <p class="text-sm text-graphite-300" title="Every serial number is QA'd once, so this is also the number of inspections.">Kiosks QA'd</p>
           <p id="stat-kiosks" class="text-2xl font-semibold text-graphite-100">0</p>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
+          <p class="text-sm text-graphite-300" title="Kiosks whose QA1 is done and whose QA2 is still to come (see the 'Waiting for QA2' list below).">Waiting for QA2</p>
+          <p id="stat-qa2" class="text-2xl font-semibold text-graphite-100">–</p>
         </div>
         <div class="flex items-baseline justify-between gap-4 px-5 py-3">
           <p class="text-sm text-graphite-300" title="QA'd kiosks that are not shipped yet and whose final check has not been done (see the 'Final check' column in the table below). Kiosks that were already shipped need none.">Waiting for final check</p>
@@ -359,6 +365,7 @@
 
     <!-- Which list: the finished inspections (the main table), the ones put aside, or the ones being worked on now -->
     <div id="view-tabs" class="mb-3 hidden flex-wrap items-center gap-2" role="tablist" aria-label="Inspections">
+      <button type="button" role="tab" data-view="waiting" class="view-tab" aria-selected="false">Waiting for QA2 <span id="count-waiting" class="tab-count">0</span></button>
       <button type="button" role="tab" data-view="finished" class="view-tab" aria-selected="true">Finished inspections</button>
       <button type="button" role="tab" data-view="unfinished" class="view-tab" aria-selected="false">Unfinished inspections <span id="count-unfinished" class="tab-count">0</span></button>
       <button type="button" role="tab" data-view="progress" class="view-tab" aria-selected="false">In progress inspections <span id="count-progress" class="tab-count">0</span></button>
@@ -374,6 +381,7 @@
             <th>Date</th>
             <th>Technician</th>
             <th>Serial</th>
+            <th title="The restart rounds, done for several kiosks at once. A dash: a full QA (all checks in one go).">QA1</th>
             <th>Pass</th>
             <th>Fail</th>
             <th title="Read the comment, then confirm the final check. A QA is done once its kiosk has passed it.">Final check</th>
@@ -386,6 +394,24 @@
     <div id="load-more-wrap" class="mt-3 hidden text-center">
       <button id="btn-load-more" type="button" class="rounded-md border border-graphite-600 px-5 py-2 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Load more</button>
       <p id="load-more-info" class="mt-1 text-xs text-graphite-500"></p>
+    </div>
+
+    <!-- Waiting for QA2: the QA1 is done, the QA2 of the kiosk is still to come -->
+    <div id="waiting-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
+      <table class="qa-table">
+        <thead>
+          <tr>
+            <th>Serial</th>
+            <th>QA1 by</th>
+            <th>QA1 date</th>
+            <th>Batch</th>
+            <th>QA1 result</th>
+            <th title="Since the QA1 was submitted">Waiting</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="waiting-body"></tbody>
+      </table>
     </div>
 
     <!-- Unfinished (put aside, to be resumed) and in progress (being worked on now; view only) -->
@@ -409,7 +435,7 @@
       No inspections match the current filters.
     </p>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-20.1</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-22.1</p>
   </div>
 
   <!-- Detail modal -->
@@ -921,7 +947,9 @@
   // ---------------------------------------------------------------------
   const PAGE_SIZE = 20;           // the finished list shows this many kiosks at first, and this many more each time
   let visibleLimit = PAGE_SIZE;
-  let view = "finished";          // which list is open: "finished" | "unfinished" | "progress"
+  let view = "finished";          // which list is open: "waiting" | "finished" | "unfinished" | "progress"
+  let lastQa1 = [];               // the kiosks whose QA1 is done and whose QA2 is still to come (oldest first)
+  let qa1State = "loading";       // "loading" | "ready" | "unsupported" (an Apps Script that does not know QA1 yet)
   // An inspection that was not put aside on purpose but has not been saved for this long is counted as left behind.
   const ACTIVE_FRESH_MS = 10 * 60 * 1000;
   let dataLoaded = false;         // the first load of the submissions has finished
@@ -1310,14 +1338,14 @@
       const res = await fetch(`${WEBHOOK_URL}?action=listLive`);
       const data = await res.json();
       if (data && data.ok && Array.isArray(data.drafts) && Array.isArray(data.shipped)) {
-        return { drafts: data.drafts, shipped: data.shipped, finalChecks: Array.isArray(data.finalChecks) ? data.finalChecks : null, supported: true };
+        return { drafts: data.drafts, shipped: data.shipped, finalChecks: Array.isArray(data.finalChecks) ? data.finalChecks : null, qa1: Array.isArray(data.qa1) ? data.qa1 : null, supported: true };
       }
     } catch (err) {
       console.error("Could not load the live data:", err);
       return null;
     }
     const drafts = await loadDrafts(); // the server answered but does not know 'listLive'
-    return drafts === null ? null : { drafts, shipped: [], finalChecks: null, supported: false };
+    return drafts === null ? null : { drafts, shipped: [], finalChecks: null, qa1: null, supported: false };
   }
 
   // True when this kiosk is already in the list for the same technician and date — so the
@@ -1336,6 +1364,8 @@
       lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.dateValue, d.serialValues, d.paused === true, draftState(d), d.elapsedSec || 0]),
       Array.from(shippedMap.entries()), shipState,
       Array.from(finalMap.entries()), finalState,
+      lastQa1.map((q) => [q.serial, q.submittedAt, q.fail, q.technician]), qa1State,
+      lastDrafts.map((d) => [d.id, d.mode]),
     ]);
   }
 
@@ -1355,6 +1385,7 @@
       .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
     if (live.supported) { applyShippedList(live.shipped); shipState = "ready"; } else { shipState = "unsupported"; }
     if (live.supported && live.finalChecks) { applyFinalList(live.finalChecks); finalState = "ready"; } else { finalState = "unsupported"; }
+    if (live.supported && live.qa1) { lastQa1 = live.qa1.slice().sort((a, b) => String(a.submittedAt).localeCompare(String(b.submittedAt))); qa1State = "ready"; } else { qa1State = "unsupported"; }
 
     // Redraw only when something changed: a redraw every half minute could swallow a click.
     const signature = liveSignature();
@@ -1428,14 +1459,14 @@
     if (kind === "unfinished" && first) {
       actions = `
         <td rowspan="${span}" class="progress-actions whitespace-nowrap">
-          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
+          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}${draft.mode === "qa1" || draft.mode === "qa2" ? "&mode=" + draft.mode : ""}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
         </td>`;
     }
     return `
       <tr class="draft-row ${kind === "unfinished" ? "is-unfinished" : "is-progress"}" data-draft="${id}">
         <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
         <td>${escapeHtml(draft.technician || "")}</td>
-        <td class="font-mono text-graphite-400">${escapeHtml(serial)}</td>
+        <td class="font-mono text-graphite-400">${escapeHtml(serial)}${draft.mode === "qa1" || draft.mode === "qa2" ? ` <span class="badge badge-wait ml-1" style="padding:0 6px;font-size:11px">${draft.mode === "qa1" ? "QA1" : "QA2"}</span>` : ""}</td>
         <td>${status}</td>
         <td class="whitespace-nowrap">${time || '<span class="text-graphite-500">—</span>'}</td>${actions}
       </tr>`;
@@ -1493,6 +1524,17 @@
   }
 
   // Under the technician: who did the very first QA and how many QAs this kiosk has had.
+  // The QA1 of a kiosk in the finished list: how it went, and how long it took (a dash for a full QA, the old way).
+  function qa1CellHtml(s) {
+    const q = s.qa1;
+    if (!q) return '<span class="text-graphite-500" title="A full QA: all checks in one go">—</span>';
+    const failed = q.fail > 0;
+    const badge = failed
+      ? `<span class="badge badge-fail" title="${linkAttr((q.failed || []).join(", "))}">✕ ${q.fail}</span>`
+      : `<span class="badge badge-pass">✓ ${q.pass}</span>`;
+    return badge + durationHtml({ durationSec: q.durationSec, sessionKiosks: q.batchSize });
+  }
+
   function renderTable(filtered) {
     const tbody = document.getElementById("table-body");
     const doneHtml = filtered
@@ -1504,6 +1546,7 @@
             <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
             <td>${escapeHtml(s.technician)}</td>
             <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
+            <td class="whitespace-nowrap">${qa1CellHtml(s)}</td>
             <td><span class="badge badge-pass">${pass}</span></td>
             <td><span class="badge ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
             <td>${finalCellHtml(s.serial)}</td>
@@ -1532,12 +1575,66 @@
     document.getElementById("drafts-actions-th").classList.toggle("hidden", kind !== "unfinished");
   }
 
+  // ---------- QA1 / QA2: the list of kiosks that wait for their QA2 ----------
+  function waitingAgeText(iso) {
+    const t = Date.parse(iso);
+    if (!isFinite(t)) return { text: "–", stale: false };
+    const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (min < 60) return { text: `${min} min`, stale: false };
+    if (min < 48 * 60) return { text: `${Math.round(min / 60)} h`, stale: false };
+    return { text: `${Math.round(min / 1440)} days`, stale: true }; // two days or more: it is getting forgotten
+  }
+
+  // the QA2 of this kiosk, if somebody has started it (so a second one is not started by mistake)
+  function qa2DraftFor(serial) {
+    return lastDrafts.find((d) => d.mode === "qa2" && (d.serialValues || []).some((v) => String(v || "").toUpperCase() === serial)) || null;
+  }
+
+  function waitingRowHtml(q) {
+    const age = waitingAgeText(q.submittedAt);
+    const failed = q.fail > 0;
+    const result = failed
+      ? `<span class="badge badge-fail" title="${linkAttr((q.failed || []).join(", "))}">✕ ${q.fail} fail</span>`
+      : `<span class="badge badge-pass">✓ ${q.pass} / ${q.pass + q.fail}</span>`;
+    const draft = qa2DraftFor(q.serial);
+    let action;
+    if (draft && draftState(draft) === "progress") {
+      action = `<span class="badge badge-wait" title="Somebody is working on it right now">QA2 in progress</span>`;
+    } else if (draft) {
+      action = `<a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}&mode=qa2" class="badge badge-pass" style="padding:6px 14px">Resume QA2 ›</a>`;
+    } else {
+      action = `<a href="qa-app.html?mode=qa2&serial=${encodeURIComponent(q.serial)}&start=1" class="badge badge-pass" style="padding:6px 14px" aria-label="Start the QA2 of ${attr(q.serial)}">Start QA2 ›</a>`;
+    }
+    return `
+      <tr data-waiting="${attr(q.serial)}">
+        <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(q.serial)}</td>
+        <td>${escapeHtml(q.technician)}</td>
+        <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(q.inspectionDate)}${durationHtml({ durationSec: q.durationSec, sessionKiosks: q.batchSize })}</td>
+        <td class="text-graphite-400">${q.batchSize} kiosk${q.batchSize === 1 ? "" : "s"}</td>
+        <td>${result}</td>
+        <td><span class="badge ${age.stale ? "badge-fail" : "badge-wait"}">${age.text}</span></td>
+        <td class="whitespace-nowrap text-right">${action}</td>
+      </tr>`;
+  }
+
+  function renderWaiting() {
+    document.getElementById("waiting-body").innerHTML = lastQa1.map(waitingRowHtml).join("");
+  }
+
+  function renderQa2Stat() {
+    const el = document.getElementById("stat-qa2");
+    if (!el) return;
+    if (qa1State !== "ready") { showText(el, qa1State === "loading" ? "…" : "–"); return; }
+    setCount(el, lastQa1.length);
+  }
+
   const EMPTY_TEXT = {
+    waiting: "No kiosk is waiting for QA2. A kiosk appears here as soon as its QA1 is submitted.",
     finished: "No inspections match the current filters.",
     unfinished: "No unfinished inspections. A QA that is stopped with Pause (or Home) waits here to be resumed.",
     progress: "Nothing is in progress right now.",
   };
-  const VIEW_TITLE = { finished: "Finished inspections", unfinished: "Unfinished inspections", progress: "In progress inspections" };
+  const VIEW_TITLE = { waiting: "Waiting for QA2", finished: "Finished inspections", unfinished: "Unfinished inspections", progress: "In progress inspections" };
 
   // Shows the list that is open, with its counts.
   function renderView() {
@@ -1546,10 +1643,15 @@
     document.getElementById("filter-final").disabled = finalState !== "ready"; // (it needs the final-check marks to be loaded)
     document.getElementById("count-unfinished").textContent = currentUnfinished.length;
     document.getElementById("count-progress").textContent = currentProgress.length;
+    document.getElementById("count-waiting").textContent = qa1State === "ready" ? lastQa1.length : "–";
+    renderQa2Stat();
 
     const shown = currentFiltered.slice(0, visibleLimit);
     let count;
-    if (view === "finished") {
+    if (view === "waiting") {
+      renderWaiting();
+      count = `${lastQa1.length} kiosk${lastQa1.length === 1 ? "" : "s"}`;
+    } else if (view === "finished") {
       renderTable(shown);
       const totalKiosks = groupBySerial(allSubmissions).length;
       count = `Showing ${shown.length} of ${currentFiltered.length} kiosk${currentFiltered.length === 1 ? "" : "s"}` +
@@ -1559,10 +1661,11 @@
       renderDrafts(rows, view);
       count = `${rows.length} kiosk${rows.length === 1 ? "" : "s"}`;
     }
-    const rowsInView = view === "finished" ? shown.length : (view === "unfinished" ? currentUnfinished : currentProgress).length;
+    const rowsInView = view === "waiting" ? lastQa1.length : view === "finished" ? shown.length : (view === "unfinished" ? currentUnfinished : currentProgress).length;
     document.getElementById("filter-count").textContent = count;
     document.getElementById("table-card").classList.toggle("hidden", !(view === "finished" && rowsInView > 0));
-    document.getElementById("drafts-card").classList.toggle("hidden", !(view !== "finished" && rowsInView > 0));
+    document.getElementById("drafts-card").classList.toggle("hidden", !((view === "unfinished" || view === "progress") && rowsInView > 0));
+    document.getElementById("waiting-card").classList.toggle("hidden", !(view === "waiting" && rowsInView > 0));
     document.getElementById("empty-state").textContent = EMPTY_TEXT[view];
     document.getElementById("empty-state").classList.toggle("hidden", rowsInView > 0);
 
@@ -1800,6 +1903,24 @@
     return `<div data-test-order class="flex items-center justify-between gap-3 py-0.5 pl-3 text-xs text-graphite-500"><span class="italic">Test Order</span><span class="min-w-0 text-right text-graphite-400">${body}</span></div>`;
   }
 
+  // ---------- a QA done in two parts: the QA1 (who, when, how long, how many kiosks together, how it went) ----------
+  function qaPartLabelHtml(text) {
+    return `<p data-qa-part class="mb-0.5 mt-2 text-[11px] font-semibold uppercase tracking-wider text-leaf-500">${escapeHtml(text)}</p>`;
+  }
+
+  function qa1BlockHtml(q) {
+    if (!q) return ""; // a full QA (all checks in one go): there is no QA1 to show
+    const failed = q.fail > 0;
+    const together = q.batchSize > 1 ? ` · together with ${q.batchSize - 1} other kiosk${q.batchSize > 2 ? "s" : ""}` : "";
+    const mins = q.durationSec ? ` · ${formatDuration(Math.round(q.durationSec))} min` : "";
+    const result = failed
+      ? `<span class="badge badge-fail">✕ ${q.fail} failed</span>`
+      : `<span class="badge badge-pass">✓ ${q.pass} / ${q.pass + q.fail}</span>`;
+    const names = failed ? `<p class="mt-1 text-xs text-graphite-400">${(q.failed || []).map((l) => escapeHtml(l)).join(", ")}</p>` : "";
+    return `<div data-qa1><p class="${LABEL_CLS}">QA1 · Restart rounds</p>
+      <p class="flex flex-wrap items-center gap-2 text-sm text-graphite-100">${result}<span>${escapeHtml(q.technician)} · ${escapeHtml(q.inspectionDate)}${mins}${together}</span></p>${names}</div>`;
+  }
+
   function renderDetailsBody(sub) {
     const key = serialKey(sub.serial);
     const failed = failedLabels(sub);
@@ -1812,6 +1933,7 @@
     } else if (failed.length) {
       html += `<div><p class="${LABEL_CLS}">Failed checks</p>${failed.map((l) => `<p class="text-sm text-graphite-200">${resultBadge("fail")} ${escapeHtml(l)}</p>`).join("")}</div>`;
     }
+    html += qa1BlockHtml(sub.qa1);
     html += detailMode === "final" ? finalFormHtml(key) : finalReadHtml(key, failed.length);
     // Results that were changed after the QA (in the final check, or by hand earlier): from -> to, by whom, when.
     if (sub.edits && sub.edits.length) {
@@ -1838,7 +1960,14 @@
             row = `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
           }
           // the camera check is followed by the link to where the camera was looked at
-          return step === "2" && label === TEST_ORDER_ITEM ? row + testOrderHtml(sub.testOrder, sub.serial) : row;
+          if (step === "2" && label === TEST_ORDER_ITEM) row += testOrderHtml(sub.testOrder, sub.serial);
+          // a QA that was done in two parts: the results are labelled by the part they belong to
+          if (sub.qa1 && step === "2") {
+            const isR = (l) => /^Round [12] - /.test(l);
+            if (idx === 0 && isR(label)) row = qaPartLabelHtml(`QA1 · Restarts (${section.items.filter(isR).length})`) + row;
+            else if (!isR(label) && idx > 0 && isR(section.items[idx - 1])) row = qaPartLabelHtml(`QA2 · Checks (${SECTION_KEYS.reduce((n, st) => n + SECTIONS[st].items.length, 0) - section.items.filter(isR).length})`) + row;
+          }
+          return row;
         })
         .join("");
       html += `<div><p class="${LABEL_CLS}">${escapeHtml(section.title)}</p>${rows}</div>`;
@@ -1939,13 +2068,20 @@
     else if (finalBtn && !finalBtn.disabled) openFinal(finalBtn.dataset.finalOpen);
   });
 
+  document.getElementById("btn-start-qa2").addEventListener("click", () => {
+    const tab = document.querySelector('[data-view="waiting"]');
+    if (view !== "waiting") tab.click();
+    document.getElementById("view-tabs").scrollIntoView({ behavior: "smooth", block: "start" });
+    tab.focus();
+  });
+
   document.getElementById("view-tabs").addEventListener("click", (e) => {
     const tab = e.target.closest("[data-view]");
     if (!tab || tab.dataset.view === view) return;
     view = tab.dataset.view;
     renderView();
     // whatever is shown for this list (the table, or the message that it is empty) fades in
-    ["table-card", "drafts-card", "empty-state"].forEach((id) => {
+    ["table-card", "drafts-card", "waiting-card", "empty-state"].forEach((id) => {
       const el = document.getElementById(id);
       el.classList.remove("view-enter");
       void el.offsetWidth; // (so the animation can play again)
