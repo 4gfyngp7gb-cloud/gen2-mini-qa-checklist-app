@@ -400,6 +400,15 @@
   .test-order-input { opacity: 0.6; transition: opacity 150ms ease, border-color 150ms ease; }
   .test-order-input:hover, .test-order-input:focus, .test-order-input:not(:placeholder-shown) { opacity: 1; }
 
+  .badge { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; border-radius: 0.375rem; padding: 0.125rem 0.5rem; font-size: 0.8125rem; line-height: 1.2rem; font-weight: 600; }
+  .badge-pass { color: rgb(var(--pass-text)); background: rgb(var(--pass) / 0.14); }
+  .badge-fail { color: rgb(var(--fail-text)); background: rgb(var(--fail) / 0.14); }
+
+  /* the parts of a split QA: QA1 has no comment box; QA2 has one kiosk whose serial cannot be changed */
+  html[data-mode="qa1"] #comments-section { display: none !important; }
+  html[data-mode="qa2"] #btn-add-serial, html[data-mode="qa2"] #btn-remove-serial { display: none !important; }
+  html[data-mode="qa2"] #serial-inputs input { opacity: 0.85; cursor: not-allowed; }
+
   /* the window that asks for the access code */
   #access-gate {
     display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 60;
@@ -567,6 +576,10 @@
       <main class="flex-1 space-y-5">
 
         <!-- CHECKLIST MATRIX (built by JS: one column per active kiosk) -->
+        <div id="mode-top" class="space-y-5" hidden>
+          <p id="mode-note" class="rounded-lg border border-graphite-700 bg-graphite-900/60 px-4 py-3 text-sm text-graphite-300"></p>
+          <div id="qa1-banner" class="rounded-lg border p-4 text-sm" hidden></div>
+        </div>
         <div id="matrix-root" class="space-y-5"></div>
 
         <!-- PER-KIOSK COMMENTS -->
@@ -594,7 +607,7 @@
       </main>
       </div><!-- /qa-shell -->
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-21.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-22.1</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -999,7 +1012,21 @@
       ],
     },
   };
-  const SECTION_KEYS = Object.keys(CHECKLISTS);
+  // ---------------------------------------------------------------------
+  // THE PART OF THE QA THIS PAGE IS FOR  (?mode=qa1  |  ?mode=qa2  |  nothing = a full QA, every check in one go, as before)
+  //   QA1: the restart rounds (Round 1 and Round 2), for several kiosks at once.
+  //   QA2: every other check, for ONE kiosk whose serial comes from QA1 (?serial=...) and cannot be changed.
+  // The answers always have the same shape (all four sections, all 54 checks); the checks that are not part of this
+  // QA are simply not shown and not counted. Everything that skips a hidden row skips them too.
+  // ---------------------------------------------------------------------
+  const URL_PARAMS = new URLSearchParams(window.location.search);
+  const MODE = ["qa1", "qa2"].indexOf(URL_PARAMS.get("mode")) !== -1 ? URL_PARAMS.get("mode") : "full";
+  const QA2_SERIAL = MODE === "qa2" ? (URL_PARAMS.get("serial") || "").trim().toUpperCase() : "";
+  const QA12_MIN_SCRIPT = "2026-10-22.1"; // the first Apps Script version that knows QA1 and QA2
+  const SUBMIT_LABEL = MODE === "qa1" ? "Submit QA1" : MODE === "qa2" ? "Submit QA2" : "Submit inspection";
+  document.documentElement.setAttribute("data-mode", MODE);
+  const ALL_STEPS = Object.keys(CHECKLISTS);
+  const SECTION_KEYS = MODE === "qa1" ? ["2"] : ALL_STEPS; // the sections this page shows (QA1 has only the restart rounds)
 
   // ---------------------------------------------------------------------
   // ROUND 2 UNLOCK — in Functional checks, each "Round 1 - X" item shares
@@ -1017,6 +1044,18 @@
     else if (label.indexOf("Round 2 - ") === 0) ROUND2_IDX.add(idx);
   });
   const ROUND2_LIST = Array.from(ROUND2_IDX).sort((a, b) => a - b);
+  const isRoundItem = (step, idx) => step === ROUND_STEP && (ROUND1_IDX.indexOf(idx) !== -1 || ROUND2_IDX.has(idx));
+  // does this check belong to this part of the QA?
+  function itemInMode(step, idx) {
+    if (MODE === "qa1") return isRoundItem(step, idx);
+    if (MODE === "qa2") return !isRoundItem(step, idx);
+    return true;
+  }
+  function firstInModeIdx(step) {
+    const n = CHECKLISTS[step].items.length;
+    for (let i = 0; i < n; i++) if (itemInMode(step, i)) return i;
+    return 0;
+  }
   // Round 2 shows as a second Pass/Fail pair next to Round 1, so once it is
   // unlocked the kiosk columns of that table need room for two pairs.
   const ROUND2_COL_WIDTH = "208px";
@@ -1065,6 +1104,7 @@
   }
 
   function isRowHidden(step, idx) {
+    if (!itemInMode(step, idx)) return true; // not part of this QA: never shown, never counted
     return step === ROUND_STEP && !round2Revealed && ROUND2_IDX.has(idx);
   }
 
@@ -1094,6 +1134,13 @@
   // the Round 2 column of the Jetson/NUCU block, then on to the next row
   // below the block (and back up to its last visible cell).
   function visualNeighborIdx(step, idx, dir) {
+    const j = visualNeighborIdxRaw(step, idx, dir);
+    const n = CHECKLISTS[step].items.length;
+    if (j >= 0 && j < n && !itemInMode(step, j)) return dir > 0 ? n : -1; // the next row belongs to the other QA: no neighbour
+    return j;
+  }
+
+  function visualNeighborIdxRaw(step, idx, dir) {
     if (step === ROUND_STEP && ROUND1_IDX.length > 0) {
       const p1 = ROUND1_IDX.indexOf(idx);
       const p2 = ROUND2_LIST.indexOf(idx);
@@ -1124,7 +1171,7 @@
 
   function freshAnswerSet() {
     const set = {};
-    SECTION_KEYS.forEach((step) => {
+    ALL_STEPS.forEach((step) => {
       set[step] = new Array(CHECKLISTS[step].items.length).fill(null);
     });
     return set;
@@ -1289,6 +1336,7 @@
 
     const input = row.querySelector("input");
     input.value = serialValues[i] || "";
+    if (MODE === "qa2") input.readOnly = true; // a QA2 belongs to the kiosk of its QA1
     input.addEventListener("input", (e) => {
       const idx = Number(e.target.dataset.index);
       const formatted = formatSerial(e.target.value);
@@ -1735,7 +1783,7 @@
         focusCell(k, prevStep, CHECKLISTS[prevStep].items.length - 1);
         return;
       }
-      idx = 0; // first item of the first section — nothing further back
+      idx = firstInModeIdx(step); // first item of the first section — nothing further back
     } else if (idx >= items.length) {
       if (secPos < SECTION_KEYS.length - 1) {
         const nextStep = SECTION_KEYS[secPos + 1];
@@ -1763,7 +1811,7 @@
     if (!el) return;
     let pass = 0, fail = 0, total = 0;
     activeKioskIndices().forEach((k) => {
-      const list = kioskAnswers[k][step];
+      const list = kioskAnswers[k][step].filter((_, i) => itemInMode(step, i));
       total += list.length;
       pass += list.filter((v) => v === "pass").length;
       fail += list.filter((v) => v === "fail").length;
@@ -1785,7 +1833,8 @@
   // PROGRESS — the bar at the top, sections that fold away when finished,
   // and buttons that jump to the next open check / the failed checks.
   // =====================================================================
-  const shortTitle = (step) => CHECKLISTS[step].title.replace(/\s+checks?$/i, "");
+  const shortTitle = (step) => (MODE === "qa1" && step === ROUND_STEP ? "Restarts" : CHECKLISTS[step].title.replace(/\s+checks?$/i, ""));
+  const cardTitle = (step, section) => (MODE === "qa1" && step === ROUND_STEP ? "QA1 · Restart rounds" : section.title);
   const collapsed = {};            // step -> true/false (decided automatically or by the person)
   const userOpened = {};           // step -> true once the person re-opened a FOLDED section: it is not folded away on its own again
   const wasComplete = {};          // step -> was it complete the last time we looked
@@ -1796,7 +1845,7 @@
   function sectionStats(step) {
     let done = 0, total = 0, fail = 0;
     activeKioskIndices().forEach((k) => {
-      const list = kioskAnswers[k][step] || [];
+      const list = (kioskAnswers[k][step] || []).filter((_, i) => itemInMode(step, i)); // only the checks of this part of the QA
       total += list.length;
       done += list.filter((v) => v === "pass" || v === "fail").length;
       fail += list.filter((v) => v === "fail").length;
@@ -1841,7 +1890,7 @@
       const wasC = wasComplete[step];
       wasComplete[step] = st.complete;
       // at the start only the section being worked on is open; a finished one (a resumed draft) is folded as well
-      if (collapsed[step] === undefined) collapsed[step] = st.complete || step !== working;
+      if (collapsed[step] === undefined) collapsed[step] = MODE === "qa1" ? false : st.complete || step !== working;
       else if (collapsed[step] && wasC && !st.complete) collapsed[step] = false; // no longer complete (e.g. a kiosk was added): open again
       applyCollapse(step);
     });
@@ -1863,6 +1912,7 @@
   function collapseWhenReady(step) {
     clearTimeout(autoCollapseTimers[step]);
     autoCollapseTimers[step] = setTimeout(() => {
+      if (MODE === "qa1") return; // (the only section of a QA1 stays open)
       if (!sectionStats(step).complete || userOpened[step]) return;
       if (step === "2" && missingTestOrderKiosk() !== null) return;
       setCollapsed(step, true);
@@ -2067,11 +2117,12 @@
   // under the wrong headings in the Sheet. The script says how many checks each section has; when that
   // differs from this page (or it is an older script that does not answer at all), Submit and saving
   // to the shared list are switched off — loudly. No answer / no connection never blocks anyone.
+  let splitScriptOld = false; // QA1 / QA2 need a newer Apps Script than the one that is deployed
   let scriptOutdated = false;
   let sheetNotReady = false;
   // A short fingerprint of every check name, in order (the Apps Script computes the same one).
   function checklistSignature() {
-    const text = SECTION_KEYS.map((k) => CHECKLISTS[k].items.join("\u0001")).join("\u0001");
+    const text = ALL_STEPS.map((k) => CHECKLISTS[k].items.join("\u0001")).join("\u0001");
     let h = 0x811c9dc5;
     for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
     return h.toString(16);
@@ -2081,12 +2132,13 @@
     try {
       const res = await fetch(`${WEBHOOK_URL}?action=checklistInfo`);
       const data = await res.json();
-      const mine = SECTION_KEYS.map((s) => CHECKLISTS[s].items.length);
+      const mine = ALL_STEPS.map((s) => CHECKLISTS[s].items.length);
       if (data && data.ok && Array.isArray(data.counts)) {
         const sameCounts = data.counts.join() === mine.join();
         const sameChecks = data.signature === undefined || data.signature === checklistSignature(); // every name, in order (an older script has no fingerprint)
         sheetNotReady = data.sheet === "blocked";
         scriptOutdated = !(sameCounts && sameChecks) || sheetNotReady;
+        if (MODE !== "full" && !(String(data.scriptVersion || "") >= QA12_MIN_SCRIPT)) { splitScriptOld = true; scriptOutdated = true; }
       } else if (data && data.ok === false && /unknown/i.test(String(data.error || ""))) scriptOutdated = true; // an older script does not know the question
       else return; // some other answer, e.g. a temporary error: no reason to block anyone
     } catch (err) {
@@ -2096,6 +2148,10 @@
     document.getElementById("script-outdated-text").innerHTML = sheetNotReady
       ? "The Sheet's columns do not match the checklist and could not be rearranged automatically, so the results would be saved under the wrong checks. <strong>Submit is switched off</strong> until that is sorted out (see the notes in the Apps Script), then reload this page. What you enter is kept on this device."
       : "It does not know the current checklist, so the results would be saved under the wrong checks. <strong>Submit is switched off</strong> until it is updated: deploy the new version of <span class=\"font-mono\">apps-script-code.gs</span>, then reload this page. What you enter is kept on this device.";
+    if (splitScriptOld && !sheetNotReady) {
+      document.getElementById("script-outdated-title").textContent = "The Google Apps Script is too old for QA1 / QA2.";
+      document.getElementById("script-outdated-text").innerHTML = "It does not know the two-part QA yet, so a " + (MODE === "qa1" ? "QA1" : "QA2") + " would not be saved. <strong>Submit is switched off</strong> until the new script version is deployed (Deploy → Manage deployments → New version).";
+    }
     document.getElementById("script-outdated-banner").classList.toggle("hidden", !scriptOutdated);
     btnSubmit.classList.toggle("opacity-50", scriptOutdated);
     btnSubmit.title = scriptOutdated ? (sheetNotReady ? "The Sheet is not ready for this checklist yet" : "The Google Apps Script is out of date: deploy its new version and reload this page") : "";
@@ -2214,6 +2270,7 @@
 
   // The first kiosk that still has no (real) link, or null when every kiosk has one.
   function missingTestOrderKiosk() {
+    if (MODE === "qa1") return null;
     for (const k of activeKioskIndices()) {
       if (!looksLikeLink(tidyTestOrder(kioskTestOrders[k]))) return k;
     }
@@ -2302,7 +2359,7 @@
 
       let headerCols = "";
       activeKiosks.forEach((k) => {
-        const r2Attr = step === ROUND_STEP
+        const r2Attr = step === ROUND_STEP && MODE !== "qa2"
           ? ` data-round2-col${round2Revealed ? ` style="width:${ROUND2_COL_WIDTH}"` : ""}`
           : "";
         headerCols += `<th class="min-w-[112px]" data-col-header="${k}"${r2Attr}>${kioskLabel(k)}</th>`;
@@ -2312,6 +2369,7 @@
       section.items.forEach((label, idx) => {
         // Round 2 items have no row of their own: they are the second
         // Pass/Fail pair in the matching Round 1 row.
+        if (!itemInMode(step, idx)) return; // (a check of the other part of the QA)
         if (step === ROUND_STEP && ROUND2_IDX.has(idx)) return;
 
         const roundPos = step === ROUND_STEP ? ROUND1_IDX.indexOf(idx) : -1;
@@ -2355,12 +2413,12 @@
             ${cols}
           </tr>
         `;
-        if (step === "2" && label === TEST_ORDER_ITEM) bodyRows += testOrderRowHtml(activeKiosks); // (not a check: just a place for the link)
+        if (step === "2" && label === TEST_ORDER_ITEM && MODE !== "qa1") bodyRows += testOrderRowHtml(activeKiosks); // (not a check: just a place for the link)
       });
 
       card.innerHTML = `
         <div class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-semibold text-graphite-100">${section.title}</h2>
+          <h2 class="text-lg font-semibold text-graphite-100">${cardTitle(step, section)}</h2>
           <button type="button" data-toggle-step="${step}" aria-expanded="true" aria-controls="body-${step}"
             class="flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1 text-sm text-graphite-400 transition hover:text-leaf-500">
             <span data-toggle-label>Hide</span>
@@ -2547,6 +2605,64 @@
 
   const btnBack = document.getElementById("btn-back");
   const btnSubmit = document.getElementById("btn-submit");
+
+  // The words that tell which part of the QA this page is (nothing changes for a full QA).
+  function applyModeTexts() {
+    if (MODE === "full") return;
+    document.title = MODE === "qa1" ? "QA1 · restart rounds" : "QA2 · checks";
+    const h1 = document.querySelector("#view-wizard header h1");
+    const eyebrow = document.querySelector("#view-wizard header p");
+    if (h1) h1.textContent = MODE === "qa1" ? "Gen2 Mini · QA1" : "Gen2 Mini · QA2";
+    if (eyebrow) eyebrow.textContent = MODE === "qa1" ? "BATCH RESTARTS" : "SINGLE KIOSK";
+    btnSubmit.textContent = SUBMIT_LABEL;
+    document.getElementById("mode-top").hidden = false;
+    document.getElementById("mode-note").innerHTML = MODE === "qa1"
+      ? "<strong>QA1 · restart rounds.</strong> Several kiosks together (up to 5). When you submit, every kiosk here waits for its own <strong>QA2</strong>. Round 2 opens next to Round 1 once Round 1 is done for all kiosks."
+      : "<strong>QA2 · every other check</strong>, for this one kiosk. Its restart rounds were done in QA1.";
+  }
+
+  // QA2 only: is this kiosk's QA1 still waiting for it? { known: false } when the Apps Script cannot be reached.
+  async function fetchQa1ForSerial() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listQa1`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.qa1)) {
+        const serial = String(serialValues[0] || "").toUpperCase();
+        return { known: true, rec: data.qa1.find((r) => r.serial === serial) || null };
+      }
+    } catch (e) { /* no connection */ }
+    return { known: false, rec: null };
+  }
+
+  async function qa1StillWaiting() { // true / false / null (cannot tell)
+    const r = await fetchQa1ForSerial();
+    return r.known ? !!r.rec : null;
+  }
+
+  // The card on top of a QA2: what the QA1 of this kiosk found.
+  async function loadQa1Banner() {
+    if (MODE !== "qa2") return;
+    const box = document.getElementById("qa1-banner");
+    const { known, rec } = await fetchQa1ForSerial();
+    if (!known) { box.hidden = true; return; }
+    box.hidden = false;
+    const clean = (l) => escapeHtml(String(l).replace(/^Round \d - /, "").replace(/ 1x$/, ""));
+    if (!rec) {
+      box.style.cssText = "border-color: rgb(var(--fail) / 0.6); background: rgb(var(--fail) / 0.08)";
+      box.innerHTML = `<span class="badge badge-fail">No QA1 waiting</span> <span class="ml-2 text-graphite-200">No QA1 is waiting for <span class="font-mono">${escapeHtml(serialValues[0] || "")}</span> (its QA2 may already be done). If you submit, the restart checks stay blank. Check the dashboard first.</span>`;
+      return;
+    }
+    const together = rec.batchSize > 1 ? ` · together with ${rec.batchSize - 1} other kiosk${rec.batchSize > 2 ? "s" : ""}` : "";
+    const mins = rec.durationSec ? ` · ${formatClock(rec.durationSec)} min` : "";
+    const who = `${escapeHtml(rec.technician)} · ${escapeHtml(rec.inspectionDate)}${mins}${together}`;
+    if (rec.fail > 0) {
+      box.style.cssText = "border-color: rgb(var(--fail) / 0.55); background: rgb(var(--fail) / 0.07)";
+      box.innerHTML = `<span class="badge badge-fail">✕ QA1: ${rec.fail} failed</span> <span class="ml-2 text-graphite-200">${(rec.failed || []).map(clean).join(", ")}</span><div class="mt-1 text-xs text-graphite-400">${who}</div>`;
+    } else {
+      box.style.cssText = "border-color: rgb(var(--pass) / 0.45); background: rgb(var(--pass) / 0.07)";
+      box.innerHTML = `<span class="badge badge-pass">✓ QA1 done</span> <span class="ml-2 text-graphite-200">All ${rec.pass} restarts <strong>Pass</strong></span><div class="mt-1 text-xs text-graphite-400">${who}</div>`;
+    }
+  }
   const wizardNav = document.getElementById("wizard-nav");
   const postSubmitActions = document.getElementById("post-submit-actions");
 
@@ -2561,6 +2677,7 @@
     restartQaTimer(0);
     kioskCount = 1;
     serialValues = new Array(SERIAL_COUNT).fill("");
+    if (MODE === "qa2") serialValues[0] = QA2_SERIAL; // the kiosk whose QA1 is done
     kioskAnswers = [freshAnswerSet()];
     kioskComments = new Array(SERIAL_COUNT).fill("");
     kioskTestOrders = new Array(SERIAL_COUNT).fill("");
@@ -2585,7 +2702,7 @@
     postSubmitActions.classList.add("hidden");
     wizardNav.classList.remove("hidden");
     btnSubmit.disabled = false;
-    btnSubmit.textContent = "Submit inspection";
+    btnSubmit.textContent = SUBMIT_LABEL;
 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -2710,6 +2827,7 @@
       kioskAnswers,
       kioskComments,
       kioskTestOrders,
+      mode: MODE,                          // which part of the QA this is ("full", "qa1" or "qa2")
       savedAt: nextSavedAt(),
       elapsedSec: currentElapsedSec(),
       checklistVersion: CHECKLIST_VERSION, // which edition of the checklist these answers belong to
@@ -2954,7 +3072,7 @@
     for (let k = 0; k < kioskCount; k++) {
       const restored = draft.kioskAnswers && draft.kioskAnswers[k];
       kioskAnswers[k] = restored ? restored : freshAnswerSet();
-      SECTION_KEYS.forEach((step) => {
+      ALL_STEPS.forEach((step) => {
         // Make every list exactly as long as the current checklist, with only
         // "pass" / "fail" / null in it (a copy from an older version may differ).
         const saved = upgradeLegacyAnswers(step, Array.isArray(kioskAnswers[k][step]) ? kioskAnswers[k][step] : [], draft.checklistVersion);
@@ -3018,7 +3136,7 @@
     // row, so unlock it and point there rather than letting it slip through.
     for (const k of activeKioskIndices()) {
       for (const step of SECTION_KEYS) {
-        const missingIdx = kioskAnswers[k][step].findIndex((v) => v === null);
+        const missingIdx = kioskAnswers[k][step].findIndex((v, i) => v === null && itemInMode(step, i));
         if (missingIdx !== -1) {
           round2Revealed = true;
           updateRound2Visibility();
@@ -3033,7 +3151,7 @@
     }
 
     // The Test Order link (under the camera check) is needed for every kiosk: a real link, not just any text.
-    for (const k of activeKioskIndices()) {
+    for (const k of (MODE === "qa1" ? [] : activeKioskIndices())) { // (the link belongs to QA2 and the full QA)
       if (!looksLikeLink(tidyTestOrder(kioskTestOrders[k]))) {
         const typed = (kioskTestOrders[k] || "").trim() !== "";
         return {
@@ -3064,22 +3182,22 @@
     const kiosks = activeKioskIndices().map((k, i) => {
       const checklist = {};
       SECTION_KEYS.forEach((step) => {
-        checklist[CHECKLISTS[step].title] = CHECKLISTS[step].items.map((label, idx) => ({
-          item: label,
-          result: kioskAnswers[k][step][idx],
-        }));
+        // only the checks of this part of the QA (a QA1 sends the restart rounds, a QA2 everything else)
+        checklist[CHECKLISTS[step].title] = CHECKLISTS[step].items
+          .map((label, idx) => ({ item: label, result: kioskAnswers[k][step][idx], idx }))
+          .filter((x) => itemInMode(step, x.idx))
+          .map((x) => ({ item: x.item, result: x.result }));
       });
-      return {
-        position: i + 1,
-        serial: serialValues[k],
-        checklist,
-        comment: (kioskComments[k] || "").trim(),
-        testOrder: tidyTestOrder(kioskTestOrders[k] || ""),
-      };
+      const kiosk = { position: i + 1, serial: serialValues[k], checklist };
+      if (MODE !== "qa1") {
+        kiosk.comment = (kioskComments[k] || "").trim();
+        kiosk.testOrder = tidyTestOrder(kioskTestOrders[k] || "");
+      }
+      return kiosk;
     });
 
-    return {
-      action: "submitInspection",
+    const payload = {
+      action: MODE === "qa1" ? "submitQa1" : "submitInspection",
       technician: getTechnicianName(),
       submittedAt: new Date().toISOString(),
       inspectionDate: dateInput.value,
@@ -3087,6 +3205,8 @@
       draftId: currentDraftId,          // lets the server remove the unfinished draft with the submission
       kiosks,
     };
+    if (MODE === "qa2") payload.mode = "qa2"; // the server joins the kiosk's waiting QA1 into the row
+    return payload;
   }
 
   function setSubmitStatus(kind, message) {
@@ -3129,6 +3249,12 @@
 
     try {
       await confirmAccess(); // (the data is sent without being able to read the answer, so the code is checked first)
+      if (MODE === "qa2" && (await qa1StillWaiting()) === false) { // (and its QA1 must still be waiting, or the restart checks would stay blank)
+        setSubmitStatus("error", "No QA1 is waiting for this kiosk any more (its QA2 may already have been submitted). Check the dashboard before submitting again.");
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = SUBMIT_LABEL;
+        return;
+      }
       await fetch(WEBHOOK_URL, {
         method: "POST",
         mode: "no-cors", // Apps Script web apps typically require no-cors from the browser
@@ -3136,7 +3262,9 @@
         body: JSON.stringify(payload),
       });
 
-      setSubmitStatus("success", "Inspection submitted. Thank you.");
+      setSubmitStatus("success", MODE === "qa1"
+        ? `QA1 submitted. ${payload.kiosks.map((x) => x.serial).join(", ")} now wait${payload.kiosks.length === 1 ? "s" : ""} for QA2. Thank you.`
+        : MODE === "qa2" ? "QA2 submitted. Thank you." : "Inspection submitted. Thank you.");
       console.log("QA checklist payload:", payload);
       const cleanup = clearDraft();
 
@@ -3156,7 +3284,7 @@
       setSubmitStatus("error", "Could not submit the inspection. Check your connection and try again.");
       console.error("QA checklist submission failed:", err);
       btnSubmit.disabled = false;
-      btnSubmit.textContent = "Submit inspection";
+      btnSubmit.textContent = SUBMIT_LABEL;
     }
   });
 
@@ -3175,7 +3303,7 @@
   function hasAnyEntry() {
     const anySerial = serialValues.some((v) => v && v.trim());
     const anyComment = kioskComments.some((v) => v && v.trim()) || kioskTestOrders.some((v) => v && v.trim());
-    const anyAnswer = kioskAnswers.some((k) => k && SECTION_KEYS.some((step) => (k[step] || []).some((v) => v !== null)));
+    const anyAnswer = kioskAnswers.some((k) => k && ALL_STEPS.some((step) => (k[step] || []).some((v) => v !== null)));
     return anySerial || anyComment || anyAnswer;
   }
 
@@ -3258,6 +3386,7 @@
 
   (async function init() {
     await ensureAccess(); // nothing is read from the Apps Script before the access code (if there is one) is known
+    applyModeTexts();
     const params = new URLSearchParams(window.location.search);
     const draftId = params.get("draftId");
 
@@ -3269,10 +3398,18 @@
       // the server), or the server never got the draft, use the newer one.
       const local = readLocalDraft(draftId);
       if (local && (!draft || String(local.savedAt) > String(draft.savedAt))) draft = local;
+      if (draft && (draft.mode || "full") !== MODE) {
+        // the draft belongs to another part of the QA (QA1 / QA2 / full): open it there, in its own part
+        const q = new URLSearchParams(window.location.search);
+        if ((draft.mode || "full") === "full") q.delete("mode"); else q.set("mode", draft.mode);
+        window.location.replace(window.location.pathname + "?" + q.toString());
+        return;
+      }
       if (draft) {
         currentDraftId = draft.id;
         applyDraft(draft);
         showWizard();
+        loadQa1Banner();
         return;
       }
       // Fall through to a fresh wizard if the draft couldn't be found
@@ -3282,6 +3419,7 @@
     currentDraftId = generateDraftId();
     resetWizard();
     showWizard();
+    loadQa1Banner();
   })();
 })();
 </script>
