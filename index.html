@@ -241,6 +241,19 @@
   .stat-list dd { font-size: 1.6rem; font-weight: 650; line-height: 1.1; color: rgb(var(--g-100)); font-variant-numeric: tabular-nums; }
   .stat-list dd small { font-size: 0.85rem; font-weight: 500; color: rgb(var(--g-500)); }
   .stat-list dd.is-go { color: rgb(var(--pass-text)); }
+  /* QA2 per person */
+  .people-card { border: 1px solid rgb(var(--g-700)); border-radius: 0.6rem; background: rgb(var(--g-900) / 0.8); padding: 1rem 1.25rem; }
+  .people-tabs { display: inline-flex; gap: 2px; border: 1px solid rgb(var(--g-700)); border-radius: 0.5rem; padding: 2px; }
+  .people-tab { border: 0; border-radius: 0.35rem; background: none; padding: 0.2rem 0.65rem; font-size: 0.8rem; font-weight: 600; color: rgb(var(--g-400)); cursor: pointer; }
+  .people-tab:hover { color: rgb(var(--g-100)); }
+  .people-tab[aria-pressed="true"] { background: rgb(var(--g-700)); color: rgb(var(--g-100)); }
+  .people-list { display: grid; grid-template-columns: 1fr; gap: 0.15rem 2rem; margin-top: 0.75rem; }
+  @media (min-width: 768px) { .people-list { grid-template-columns: 1fr 1fr; } }
+  .people-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 2.5rem; align-items: center; gap: 0.75rem; padding: 0.3rem 0; }
+  .people-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; color: rgb(var(--g-200)); }
+  .people-bar { height: 8px; border-radius: 999px; background: rgb(var(--g-800)); overflow: hidden; }
+  .people-bar > i { display: block; height: 100%; border-radius: 999px; background: rgb(var(--pass-text)); }
+  .people-n { text-align: right; font-size: 1rem; font-weight: 650; color: rgb(var(--g-100)); font-variant-numeric: tabular-nums; }
   .desk-surface { overflow-x: auto; border: 1px solid rgb(var(--g-600)); border-radius: 0.75rem; background: rgb(var(--g-900)); padding: 0.7rem; }
   .desk-grid { display: grid; grid-template-columns: repeat(8, minmax(88px, 1fr)); gap: 0.5rem; min-width: 730px; }
   .desk-row-label { display: none; }
@@ -403,6 +416,18 @@
         </dl>
       </div>
 
+      <!-- how many QA2s each person has done (a full QA counts too: it contains the QA2 checks); QA1s are not counted -->
+      <section id="qa2-people" class="people-card mb-6" aria-labelledby="qa2-people-h">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-baseline gap-2">
+            <h2 id="qa2-people-h" class="text-base font-semibold text-graphite-100">QA2 per person</h2>
+            <span id="qa2-people-total" class="text-sm text-graphite-500"></span>
+          </div>
+          <span class="text-xs text-graphite-500">All time</span>
+        </div>
+        <div id="qa2-people-list" class="people-list"></div>
+      </section>
+
       <section id="desk-section" aria-labelledby="desk-h" class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_21.5rem]">
         <div class="min-w-0">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -459,7 +484,7 @@
       </section>
     </div>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-24.3</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-24.5</p>
 
   </div>
 
@@ -2333,6 +2358,38 @@ document.getElementById("detail-close").addEventListener("click", () => {
     subsBySerial = new Map();
     groupBySerial(allSubmissions).forEach((runs) => subsBySerial.set(serialKey(runs[0].serial), runs));
     render();
+    renderQa2People();
+  }
+
+  // ---------- QA2 per person ----------
+  // Every submitted QA2 counts once for the person whose name is on its row (a full QA, the old way, counts too: it
+  // contains the QA2 checks). QA1s are not counted. A kiosk QA'd twice counts twice: both were work done. All time.
+  let qa2Period = "all";
+  function qa2PeriodStart(period) {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    if (period === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    else if (period === "month") d.setDate(1);
+    else return "";
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+  function renderQa2People() {
+    const box = $("#qa2-people-list");
+    if (!box) return;
+    const from = qa2PeriodStart(qa2Period);
+    const counts = new Map();
+    allSubmissions.forEach((s) => {
+      if (from && !(String(s.inspectionDate || "") >= from)) return;
+      const name = String(s.technician || "").trim() || "No name";
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    const list = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const total = list.reduce((n, x) => n + x[1], 0), max = list.length ? list[0][1] : 0;
+    document.querySelectorAll("[data-qa2-period]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.qa2Period === qa2Period)));
+    $("#qa2-people-total").textContent = `${total} QA2${total === 1 ? "" : "s"}`;
+    box.innerHTML = list.length
+      ? list.map(([name, n]) => `<div class="people-row" data-person="${attr(name)}"><span class="people-name" title="${attr(name)}">${escapeHtml(name)}</span><span class="people-bar" aria-hidden="true"><i style="width:${(100 * n / max).toFixed(1)}%"></i></span><span class="people-n">${n}</span></div>`).join("")
+      : `<p class="text-sm text-graphite-500">No QA2 ${qa2Period === "week" ? "this week" : qa2Period === "month" ? "this month" : ""} yet.</p>`;
   }
 
   // The steps of a kiosk that was on the desk, for the Details window (who did what, when).
