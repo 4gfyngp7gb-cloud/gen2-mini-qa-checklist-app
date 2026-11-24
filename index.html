@@ -421,7 +421,7 @@
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-baseline gap-2">
             <h2 id="qa2-people-h" class="text-base font-semibold text-graphite-100">QA2 per person</h2>
-            <span id="qa2-people-total" class="text-sm text-graphite-500"></span>
+            <span id="qa2-people-total" class="text-sm text-graphite-500" title="QA2s, and the full QAs of the old version (before QA1/QA2). Not counted: QA1, final check, re-QA, and full QAs after the split."></span>
           </div>
           <span class="text-xs text-graphite-500">All time</span>
         </div>
@@ -484,7 +484,7 @@
       </section>
     </div>
 
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-24.5</p>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-24.8</p>
 
   </div>
 
@@ -2362,8 +2362,11 @@ document.getElementById("detail-close").addEventListener("click", () => {
   }
 
   // ---------- QA2 per person ----------
-  // Every submitted QA2 counts once for the person whose name is on its row (a full QA, the old way, counts too: it
-  // contains the QA2 checks). QA1s are not counted. A kiosk QA'd twice counts twice: both were work done. All time.
+  // What counts, each kiosk ONCE, for the person who did it (all time):
+  //   * a QA2 (a row submitted as a QA2, joined with its QA1);
+  //   * from the old version, before the QA was split into QA1 and QA2 (before the very first QA2), the full QA.
+  // Not counted: QA1s, final checks, full QAs done after the split, and re-QAs (any later run of a kiosk that was
+  // already QA'd: only its first QA counts). Old rows without a name cannot be counted for anybody (said so).
   let qa2Period = "all";
   function qa2PeriodStart(period) {
     const d = new Date(); d.setHours(0, 0, 0, 0);
@@ -2378,15 +2381,23 @@ document.getElementById("detail-close").addEventListener("click", () => {
     if (!box) return;
     const from = qa2PeriodStart(qa2Period);
     const counts = new Map();
-    allSubmissions.forEach((s) => {
-      if (from && !(String(s.inspectionDate || "") >= from)) return;
-      const name = String(s.technician || "").trim() || "No name";
+    let unnamed = 0;
+    const qa2Dates = allSubmissions.filter((r) => !!r.qa1).map((r) => String(r.inspectionDate || "")).filter(Boolean).sort();
+    const splitFrom = qa2Dates.length ? qa2Dates[0] : ""; // the day of the first QA2: from then on full QAs do not count
+    groupBySerial(allSubmissions).forEach((runs) => {
+      const first = runs[0]; // the kiosk's first QA (later runs are re-QAs)
+      if (!first) return;
+      const oldFull = !first.qa1 && (!splitFrom || String(first.inspectionDate || "") < splitFrom);
+      if (!first.qa1 && !oldFull) return;
+      if (from && !(String(first.inspectionDate || "") >= from)) return;
+      const name = String(first.technician || "").trim();
+      if (!name) { unnamed++; return; }
       counts.set(name, (counts.get(name) || 0) + 1);
     });
     const list = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const total = list.reduce((n, x) => n + x[1], 0), max = list.length ? list[0][1] : 0;
     document.querySelectorAll("[data-qa2-period]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.qa2Period === qa2Period)));
-    $("#qa2-people-total").textContent = `${total} QA2${total === 1 ? "" : "s"}`;
+    $("#qa2-people-total").textContent = `${total} kiosk${total === 1 ? "" : "s"}` + (unnamed ? ` · ${unnamed} old QA${unnamed === 1 ? "" : "s"} without a name not counted` : "");
     box.innerHTML = list.length
       ? list.map(([name, n]) => `<div class="people-row" data-person="${attr(name)}"><span class="people-name" title="${attr(name)}">${escapeHtml(name)}</span><span class="people-bar" aria-hidden="true"><i style="width:${(100 * n / max).toFixed(1)}%"></i></span><span class="people-n">${n}</span></div>`).join("")
       : `<p class="text-sm text-graphite-500">No QA2 ${qa2Period === "week" ? "this week" : qa2Period === "month" ? "this month" : ""} yet.</p>`;
