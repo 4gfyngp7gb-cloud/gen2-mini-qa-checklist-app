@@ -250,7 +250,7 @@
     padding: 0.5rem 0.6rem;
     border-bottom: 1px solid rgb(var(--g-700));
     white-space: nowrap;
-    width: 112px; /* one Pass/Fail pair (92px) + the cell's side padding (16px) */
+    width: var(--col-w, 112px); /* one Pass/Fail pair (92px) + the cell's side padding (16px); slimmer for a QA1 of more than 5 kiosks */
   }
   .matrix-table thead th.sticky-col { text-align: left; color: rgb(var(--g-200)); }
   .matrix-table tbody td {
@@ -353,7 +353,10 @@
     .chip-actions > [data-goto-fail], .chip-actions > [data-goto-next], .chip-actions > [data-goto-link] { flex: 1 1 0; justify-content: center; margin: 0; padding: 0.4rem 0.3rem; white-space: nowrap; }
     .chip-actions > span.ml-auto { margin: 2px auto 0; }
     .qa-rail > * { flex: none; }
-    .qa-rail > #progress-bar { flex: 0 1 auto; min-height: 150px; overflow-y: auto; scrollbar-width: thin; }
+    .qa-rail > #progress-bar { flex: 0 1 auto; min-height: 96px; overflow-y: auto; scrollbar-width: thin; }
+    /* the buttons (Submit) are never pushed off the screen: the cards above them give way, and scroll inside if they must */
+    .qa-rail { overflow: hidden; }
+    .qa-rail > .qa-kiosk { flex: 0 1 auto; min-height: 150px; overflow-y: auto; scrollbar-width: thin; }
 
     /* the buttons: a card in the rail; Submit is the one big button */
     #wizard-nav {
@@ -404,9 +407,17 @@
   .badge-pass { color: rgb(var(--pass-text)); background: rgb(var(--pass) / 0.14); }
   .badge-fail { color: rgb(var(--fail-text)); background: rgb(var(--fail) / 0.14); }
 
-  /* the parts of a split QA: QA1 has no comment box; QA2 has one kiosk whose serial cannot be changed */
-  html[data-mode="qa1"] #comments-section { display: none !important; }
+  /* the parts of a split QA: QA2 has one kiosk whose serial cannot be changed (QA1 has a comment box too: it is added to the QA2 comment) */
   html[data-mode="qa2"] #btn-add-serial, html[data-mode="qa2"] #btn-remove-serial { display: none !important; }
+  /* a QA1 takes up to 10 kiosks: their serial numbers stand two by two, so that the left side stays short */
+  html[data-mode="qa1"] #serial-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.6rem; }
+  html[data-mode="qa1"] #serial-inputs > div { margin-top: 0 !important; min-width: 0; }
+  html[data-mode="qa1"] #serial-inputs > div:first-child { grid-column: 1 / -1; }
+  html[data-mode="qa1"] #serial-inputs > div:not(:first-child) > div.mb-1 { display: none; }
+  html[data-mode="qa1"] #serial-inputs input { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+  html[data-mode="qa1"] .qa-kiosk #btn-add-serial, html[data-mode="qa1"] .qa-kiosk #btn-remove-serial { white-space: nowrap; }
+  html[data-mode="qa1"] #progress-chips .progress-chip[data-goto-step] { display: none; } /* (a QA1 has one section: the bar above says it all) */
+  html[data-compact="1"] .pf-btn-sm { width: 1.9rem; height: 2rem; }
   html[data-mode="qa2"] #serial-inputs input { opacity: 0.85; cursor: not-allowed; }
 
   /* the window that asks for the access code */
@@ -585,7 +596,7 @@
         <!-- PER-KIOSK COMMENTS -->
         <section id="comments-section" class="hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 shadow-lg shadow-black/20 sm:p-6">
           <h2 class="text-lg font-semibold text-graphite-100">Comment</h2>
-          <p class="mt-1 text-sm text-graphite-400">Optional notes, one per kiosk.</p>
+          <p id="comments-hint" class="mt-1 text-sm text-graphite-400">Optional notes, one per kiosk.</p>
           <div id="comments-grid" class="mt-4 grid gap-4 sm:grid-cols-2"></div>
         </section>
 
@@ -607,7 +618,7 @@
       </main>
       </div><!-- /qa-shell -->
 
-      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-22.1</p>
+      <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-19.3</p>
 
       <!-- Discard confirmation -->
       <div id="discard-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -869,7 +880,8 @@
   // The window is put up at once when the early decision in the <head> said so (without waiting for the Apps Script).
   if (document.documentElement.classList.contains("gate-pending")) askForAccessCode();
   const DRAFTS_KEY = "qaChecklistDrafts_v1";
-  const SERIAL_COUNT = 5;
+  // How many kiosks one QA takes: a QA1 (the restart rounds) up to 10 at once, the other kinds up to 5.
+  const SERIAL_COUNT = new URLSearchParams(window.location.search).get("mode") === "qa1" ? 10 : 5;
 
   // The draft currently open in the wizard, if any. Every unfinished
   // inspection is saved under its own id, so starting a new one never
@@ -1022,7 +1034,9 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const MODE = ["qa1", "qa2"].indexOf(URL_PARAMS.get("mode")) !== -1 ? URL_PARAMS.get("mode") : "full";
   const QA2_SERIAL = MODE === "qa2" ? (URL_PARAMS.get("serial") || "").trim().toUpperCase() : "";
-  const QA12_MIN_SCRIPT = "2026-10-22.1"; // the first Apps Script version that knows QA1 and QA2
+  const QA12_MIN_SCRIPT = "2026-10-24.1"; // the first Apps Script version that knows QA1 and QA2
+  const QA1_COMMENT_MIN_SCRIPT = "2026-11-19.3"; // the first one that keeps a QA1 comment (an older one would drop it)
+  let qa1CommentOff = false;              // the Apps Script in use cannot keep a QA1 comment: the box is not offered
   const SUBMIT_LABEL = MODE === "qa1" ? "Submit QA1" : MODE === "qa2" ? "Submit QA2" : "Submit inspection";
   document.documentElement.setAttribute("data-mode", MODE);
   const ALL_STEPS = Object.keys(CHECKLISTS);
@@ -1045,10 +1059,13 @@
   });
   const ROUND2_LIST = Array.from(ROUND2_IDX).sort((a, b) => a - b);
   const isRoundItem = (step, idx) => step === ROUND_STEP && (ROUND1_IDX.indexOf(idx) !== -1 || ROUND2_IDX.has(idx));
+  // Besides the restart rounds, the Connector board power button test belongs to QA1 (it is done on all the kiosks together).
+  const QA1_EXTRA_IDX = new Set(["Connector board power button test"].map((l) => CHECKLISTS[ROUND_STEP].items.indexOf(l)).filter((i) => i !== -1));
+  const isQa1Item = (step, idx) => isRoundItem(step, idx) || (step === ROUND_STEP && QA1_EXTRA_IDX.has(idx));
   // does this check belong to this part of the QA?
   function itemInMode(step, idx) {
-    if (MODE === "qa1") return isRoundItem(step, idx);
-    if (MODE === "qa2") return !isRoundItem(step, idx);
+    if (MODE === "qa1") return isQa1Item(step, idx);
+    if (MODE === "qa2") return !isQa1Item(step, idx);
     return true;
   }
   function firstInModeIdx(step) {
@@ -1058,13 +1075,12 @@
   }
   // Round 2 shows as a second Pass/Fail pair next to Round 1, so once it is
   // unlocked the kiosk columns of that table need room for two pairs.
-  const ROUND2_COL_WIDTH = "208px";
-
-  // Column widths (they match the CSS: .matrix-table / .sticky-col) and what surrounds
-  // the table: card padding (2 x 24) + page padding (2 x 16) + borders.
+  // A QA1 of more than 5 kiosks uses slimmer buttons and columns, so that 10 kiosks need as little sideways scrolling as possible.
+  const isCompact = () => MODE === "qa1" && kioskCount > 5;
+  const colPx = () => (isCompact() ? 90 : 112);      // one Pass/Fail pair + the cell's side padding
+  const round2Px = () => (isCompact() ? 172 : 208);  // two pairs side by side
+  const round2Width = () => round2Px() + "px";
   const LABEL_COL_PX = 220;
-  const KIOSK_COL_PX = 112;
-  const ROUND2_COL_PX = 208;
   const PAGE_MIN_PX = 672; // 42rem, the normal narrow form
   const PAGE_PADDING_PX = 2 * 24 + 2 * 16 + 4;
   const pageEl = document.getElementById("page");
@@ -1072,12 +1088,14 @@
   // How wide the page has to be for the widest table (Functional checks, with
   // Round 2 beside Round 1 once it is open) to fit without sideways scrolling.
   function pageWidthFor(kioskCount, round2Open) {
-    const perKiosk = round2Open ? ROUND2_COL_PX : KIOSK_COL_PX;
-    const tableWidth = LABEL_COL_PX + kioskCount * Math.max(perKiosk, KIOSK_COL_PX);
+    const perKiosk = round2Open ? round2Px() : colPx();
+    const tableWidth = LABEL_COL_PX + kioskCount * Math.max(perKiosk, colPx());
     return Math.max(PAGE_MIN_PX, tableWidth + PAGE_PADDING_PX);
   }
 
   function updatePageWidth() {
+    document.documentElement.setAttribute("data-compact", isCompact() ? "1" : "0");
+    document.documentElement.style.setProperty("--col-w", colPx() + "px");
     pageEl.style.setProperty("--page-w", pageWidthFor(activeKioskIndices().length, round2Revealed) + "px");
   }
   // once the page has finished growing or shrinking, check which tables still overflow
@@ -1114,7 +1132,7 @@
       el.style.display = round2Revealed ? "" : "none";
     });
     matrixRoot.querySelectorAll("th[data-round2-col]").forEach((th) => {
-      th.style.width = round2Revealed ? ROUND2_COL_WIDTH : "";
+      th.style.width = round2Revealed ? round2Width() : "";
     });
     updatePageWidth(); // Round 2 columns just appeared/disappeared
     paintAllRows();    // (a row's colour counts only the Pass/Fail pairs that are on screen)
@@ -1134,10 +1152,13 @@
   // the Round 2 column of the Jetson/NUCU block, then on to the next row
   // below the block (and back up to its last visible cell).
   function visualNeighborIdx(step, idx, dir) {
-    const j = visualNeighborIdxRaw(step, idx, dir);
     const n = CHECKLISTS[step].items.length;
-    if (j >= 0 && j < n && !itemInMode(step, j)) return dir > 0 ? n : -1; // the next row belongs to the other QA: no neighbour
-    return j;
+    let j = visualNeighborIdxRaw(step, idx, dir);
+    let skipped = false;
+    while (j >= 0 && j < n && !itemInMode(step, j)) { j += dir; skipped = true; } // (rows of the other part of the QA are passed over)
+    // Round 2 shares its row with Round 1: going up onto it means the last row of the restart block
+    if (skipped && j >= 0 && j < n && step === ROUND_STEP && ROUND2_IDX.has(j)) j = ROUND1_IDX[ROUND1_IDX.length - 1];
+    return j; // (out of range: there is no row that way)
   }
 
   function visualNeighborIdxRaw(step, idx, dir) {
@@ -1336,7 +1357,16 @@
 
     const input = row.querySelector("input");
     input.value = serialValues[i] || "";
+    input.setAttribute("aria-label", `Serial number ${i + 1}`);
     if (MODE === "qa2") input.readOnly = true; // a QA2 belongs to the kiosk of its QA1
+    // Several serial numbers pasted at once (one per line, or separated by spaces or commas) fill this field and the next ones.
+    input.addEventListener("paste", (e) => {
+      const text = (e.clipboardData && e.clipboardData.getData("text")) || "";
+      const tokens = text.split(/[\s,;]+/).map((t) => t.trim().toUpperCase()).filter(Boolean);
+      if (tokens.length < 2 || MODE === "qa2") return; // one serial number: an ordinary paste, as before
+      e.preventDefault();
+      fillSerialsFrom(i, tokens);
+    });
     input.addEventListener("input", (e) => {
       const idx = Number(e.target.dataset.index);
       const formatted = formatSerial(e.target.value);
@@ -1401,6 +1431,29 @@
 
   function kioskLabel(k) {
     return hasKiosk(k) ? serialValues[k] : `Kiosk ${k + 1}`;
+  }
+
+  // Fills the serial fields from `start` on with the given serial numbers, adding fields as needed (up to the limit).
+  function fillSerialsFrom(start, tokens) {
+    let placed = 0;
+    for (let n = 0; n < tokens.length; n++) {
+      const idx = start + n;
+      if (idx >= kioskCount) {
+        if (kioskCount >= SERIAL_COUNT) break;
+        addKiosk();
+        if (idx >= kioskCount) break; // (not added: a serial number is there twice)
+      }
+      const field = document.getElementById(`sn-${idx}`);
+      if (!field) break;
+      field.value = tokens[n];
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      placed++;
+    }
+    if (placed < tokens.length) {
+      const err = document.getElementById("serial-error");
+      err.textContent = `${placed} of ${tokens.length} serial numbers were added: this kind of QA takes at most ${SERIAL_COUNT} kiosks, and every serial number only once.`;
+      err.classList.remove("hidden");
+    }
   }
 
   function addKiosk() {
@@ -1834,7 +1887,7 @@
   // and buttons that jump to the next open check / the failed checks.
   // =====================================================================
   const shortTitle = (step) => (MODE === "qa1" && step === ROUND_STEP ? "Restarts" : CHECKLISTS[step].title.replace(/\s+checks?$/i, ""));
-  const cardTitle = (step, section) => (MODE === "qa1" && step === ROUND_STEP ? "QA1 · Restart rounds" : section.title);
+  const cardTitle = (step, section) => (MODE === "qa1" && step === ROUND_STEP ? "QA1 · Restarts and power button test" : section.title);
   const collapsed = {};            // step -> true/false (decided automatically or by the person)
   const userOpened = {};           // step -> true once the person re-opened a FOLDED section: it is not folded away on its own again
   const wasComplete = {};          // step -> was it complete the last time we looked
@@ -2139,6 +2192,7 @@
         sheetNotReady = data.sheet === "blocked";
         scriptOutdated = !(sameCounts && sameChecks) || sheetNotReady;
         if (MODE !== "full" && !(String(data.scriptVersion || "") >= QA12_MIN_SCRIPT)) { splitScriptOld = true; scriptOutdated = true; }
+        if (MODE === "qa1" && !(String(data.scriptVersion || "") >= QA1_COMMENT_MIN_SCRIPT)) { qa1CommentOff = true; rebuildComments(); }
       } else if (data && data.ok === false && /unknown/i.test(String(data.error || ""))) scriptOutdated = true; // an older script does not know the question
       else return; // some other answer, e.g. a temporary error: no reason to block anyone
     } catch (err) {
@@ -2360,9 +2414,9 @@
       let headerCols = "";
       activeKiosks.forEach((k) => {
         const r2Attr = step === ROUND_STEP && MODE !== "qa2"
-          ? ` data-round2-col${round2Revealed ? ` style="width:${ROUND2_COL_WIDTH}"` : ""}`
+          ? ` data-round2-col${round2Revealed ? ` style="width:${round2Width()}"` : ""}`
           : "";
-        headerCols += `<th class="min-w-[112px]" data-col-header="${k}"${r2Attr}>${kioskLabel(k)}</th>`;
+        headerCols += `<th class="min-w-[84px]" data-col-header="${k}"${r2Attr}>${kioskLabel(k)}</th>`;
       });
 
       let bodyRows = "";
@@ -2542,8 +2596,11 @@
 
   function rebuildComments() {
     commentsGrid.innerHTML = "";
+    document.getElementById("comments-hint").textContent = MODE === "qa1"
+      ? "Optional notes, one per kiosk. They are added to the kiosk's comment when its QA2 is submitted."
+      : MODE === "qa2" ? "Optional. A comment written at the QA1 is added in front of it." : "Optional notes, one per kiosk.";
     const activeKiosks = activeKioskIndices();
-    document.getElementById("comments-section").classList.toggle("hidden", activeKiosks.length === 0);
+    document.getElementById("comments-section").classList.toggle("hidden", activeKiosks.length === 0 || (MODE === "qa1" && qa1CommentOff));
 
     activeKiosks.forEach((k) => {
       const block = document.createElement("div");
@@ -2617,8 +2674,8 @@
     btnSubmit.textContent = SUBMIT_LABEL;
     document.getElementById("mode-top").hidden = false;
     document.getElementById("mode-note").innerHTML = MODE === "qa1"
-      ? "<strong>QA1 · restart rounds.</strong> Several kiosks together (up to 5). When you submit, every kiosk here waits for its own <strong>QA2</strong>. Round 2 opens next to Round 1 once Round 1 is done for all kiosks."
-      : "<strong>QA2 · every other check</strong>, for this one kiosk. Its restart rounds were done in QA1.";
+      ? "<strong>QA1 · restart rounds and the Connector board power button test.</strong> Several kiosks together (up to 10). When you submit, every kiosk here waits for its own <strong>QA2</strong>. Round 2 opens next to Round 1 once Round 1 is done for all kiosks."
+      : "<strong>QA2 · every other check</strong>, for this one kiosk. Its restart rounds and the power button test were done in QA1.";
   }
 
   // QA2 only: is this kiosk's QA1 still waiting for it? { known: false } when the Apps Script cannot be reached.
@@ -2654,13 +2711,14 @@
     }
     const together = rec.batchSize > 1 ? ` · together with ${rec.batchSize - 1} other kiosk${rec.batchSize > 2 ? "s" : ""}` : "";
     const mins = rec.durationSec ? ` · ${formatClock(rec.durationSec)} min` : "";
-    const who = `${escapeHtml(rec.technician)} · ${escapeHtml(rec.inspectionDate)}${mins}${together}`;
+    const who = `${escapeHtml(rec.technician)} · ${escapeHtml(rec.inspectionDate)}${mins}${together}`
+      + (rec.comment ? `</div><div class="mt-1.5 text-sm text-graphite-200"><span class="text-xs font-semibold uppercase tracking-wide text-graphite-500">QA1 comment</span> <span class="whitespace-pre-wrap break-words">${escapeHtml(rec.comment)}</span>` : "");
     if (rec.fail > 0) {
       box.style.cssText = "border-color: rgb(var(--fail) / 0.55); background: rgb(var(--fail) / 0.07)";
       box.innerHTML = `<span class="badge badge-fail">✕ QA1: ${rec.fail} failed</span> <span class="ml-2 text-graphite-200">${(rec.failed || []).map(clean).join(", ")}</span><div class="mt-1 text-xs text-graphite-400">${who}</div>`;
     } else {
       box.style.cssText = "border-color: rgb(var(--pass) / 0.45); background: rgb(var(--pass) / 0.07)";
-      box.innerHTML = `<span class="badge badge-pass">✓ QA1 done</span> <span class="ml-2 text-graphite-200">All ${rec.pass} restarts <strong>Pass</strong></span><div class="mt-1 text-xs text-graphite-400">${who}</div>`;
+      box.innerHTML = `<span class="badge badge-pass">✓ QA1 done</span> <span class="ml-2 text-graphite-200">All ${rec.pass} QA1 checks <strong>Pass</strong></span><div class="mt-1 text-xs text-graphite-400">${who}</div>`;
     }
   }
   const wizardNav = document.getElementById("wizard-nav");
@@ -2675,15 +2733,20 @@
   // ---------------------------------------------------------------------
   function resetWizard() {
     restartQaTimer(0);
-    kioskCount = 1;
+    // A QA1 started from the assembly desk comes with the kiosks that were chosen there (?serials=M-AAAAA,M-BBBBB,...).
+    const fromDesk = MODE === "qa1"
+      ? Array.from(new Set((URL_PARAMS.get("serials") || "").split(/[\s,;]+/).map((t) => formatSerial(t)).filter(Boolean))).slice(0, SERIAL_COUNT)
+      : [];
+    kioskCount = Math.max(1, fromDesk.length);
     serialValues = new Array(SERIAL_COUNT).fill("");
+    fromDesk.forEach((v, i) => { serialValues[i] = v; });
     if (MODE === "qa2") serialValues[0] = QA2_SERIAL; // the kiosk whose QA1 is done
-    kioskAnswers = [freshAnswerSet()];
+    kioskAnswers = Array.from({ length: kioskCount }, () => freshAnswerSet());
     kioskComments = new Array(SERIAL_COUNT).fill("");
     kioskTestOrders = new Array(SERIAL_COUNT).fill("");
 
     serialInputsWrap.innerHTML = "";
-    addSerialField(0, false);
+    for (let i = 0; i < kioskCount; i++) addSerialField(i, false);
     updateAddRemoveVisibility();
 
     dateInput.value = todayISO();
@@ -3055,18 +3118,11 @@
     lastSavedAtMs = Math.max(lastSavedAtMs, Date.parse(draft.savedAt) || 0);
     setTechnicianName(draft.technician || "");
     kioskCount = Math.min(Math.max(draft.kioskCount || 1, 1), SERIAL_COUNT);
-    serialValues =
-      draft.serialValues && draft.serialValues.length === SERIAL_COUNT
-        ? draft.serialValues.slice()
-        : new Array(SERIAL_COUNT).fill("");
-    kioskComments =
-      draft.kioskComments && draft.kioskComments.length === SERIAL_COUNT
-        ? draft.kioskComments.slice()
-        : new Array(SERIAL_COUNT).fill("");
-    kioskTestOrders =
-      draft.kioskTestOrders && draft.kioskTestOrders.length === SERIAL_COUNT
-        ? draft.kioskTestOrders.map((v) => String(v || ""))
-        : new Array(SERIAL_COUNT).fill("");
+    // (a draft saved on a page that takes another number of kiosks is cut or padded, not thrown away)
+    const fitList = (list, map) => { const out = new Array(SERIAL_COUNT).fill(""); if (Array.isArray(list)) list.slice(0, SERIAL_COUNT).forEach((v, i) => { out[i] = map ? map(v) : v; }); return out; };
+    serialValues = fitList(draft.serialValues);
+    kioskComments = fitList(draft.kioskComments);
+    kioskTestOrders = fitList(draft.kioskTestOrders, (v) => String(v || ""));
 
     kioskAnswers = [];
     for (let k = 0; k < kioskCount; k++) {
@@ -3189,8 +3245,8 @@
           .map((x) => ({ item: x.item, result: x.result }));
       });
       const kiosk = { position: i + 1, serial: serialValues[k], checklist };
+      kiosk.comment = (kioskComments[k] || "").trim(); // a QA1 comment is kept with the QA1 and joined into the QA2's
       if (MODE !== "qa1") {
-        kiosk.comment = (kioskComments[k] || "").trim();
         kiosk.testOrder = tidyTestOrder(kioskTestOrders[k] || "");
       }
       return kiosk;
@@ -3420,6 +3476,9 @@
     resetWizard();
     showWizard();
     loadQa1Banner();
+    // started from the assembly desk: the name of who is working there comes along (?tech=Dani)
+    const deskTech = (URL_PARAMS.get("tech") || "").trim().slice(0, 60);
+    if (deskTech) { await peopleListReady; setTechnicianName(deskTech); }
   })();
 })();
 </script>
