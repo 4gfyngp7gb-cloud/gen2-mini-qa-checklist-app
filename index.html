@@ -26,7 +26,7 @@
   })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gen2 Mini QA Dashboard</title>
+<title>Hardware QA Dashboard</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -60,7 +60,6 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
   /* ---------- Colour themes: dark (default) and light ----------
@@ -179,6 +178,19 @@
     font-size: 0.8125rem; font-weight: 600; background: rgb(var(--g-700)); color: rgb(var(--g-200));
   }
   table.qa-table td.progress-actions { vertical-align: middle; }
+  /* the tabs of the Details window: Details | Comments */
+  .dtab { margin-bottom: -1px; display: inline-flex; align-items: center; gap: 0.4rem; border: 0; border-bottom: 2px solid transparent; background: none; padding: 0.4rem 0.75rem; font-size: 0.875rem; font-weight: 500; color: rgb(var(--g-400)); cursor: pointer; transition: color 150ms ease, border-color 150ms ease; }
+  .dtab:hover { color: rgb(var(--g-100)); }
+  .dtab[aria-selected="true"] { border-bottom-color: rgb(var(--leaf-500)); color: rgb(var(--g-100)); font-weight: 600; }
+  .dtab:focus-visible { outline: 2px solid rgb(var(--leaf-500)); outline-offset: -2px; border-radius: 0.3rem; }
+  .dtab .tab-count { min-width: 1.25rem; border-radius: 9999px; padding: 0 0.35rem; text-align: center; font-size: 0.75rem; font-weight: 600; background: rgb(var(--g-700)); color: rgb(var(--g-200)); }
+  .cmt { border: 1px solid rgb(var(--g-700)); border-radius: 0.5rem; background: rgb(var(--g-800) / 0.6); padding: 0.6rem 0.75rem; }
+  .cmt.is-current { border-color: rgb(var(--g-600)); }
+  .cmt-part { display: inline-block; border-radius: 0.3rem; padding: 0 0.4rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; background: rgb(var(--g-700)); color: rgb(var(--g-100)); }
+  .cmt-part.qa1 { background: rgb(var(--leaf-500) / 0.16); color: rgb(var(--leaf-500)); }
+  .cmt-part.final { background: rgb(232 174 12 / 0.16); color: #C98A00; }
+  .cmt-part.note { background: rgb(59 130 246 / 0.16); color: rgb(96 165 250); }
+  :root[data-theme="light"] .cmt-part.note { color: rgb(29 78 216); }
   .progress-dot {
     display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px;
     background: rgb(var(--leaf-500)); animation: qa-pulse 1.6s ease-in-out infinite;
@@ -208,12 +220,136 @@
   /* show the icon of the theme you would switch TO */
   :root[data-theme="light"] .theme-icon-sun { display: none; }
   :root:not([data-theme="light"]) .theme-icon-moon { display: none; }
-</style>
+
+  /* ---------- assembly desk (the room) ---------- */
+  .room-stat { border: 1px solid rgb(var(--g-700)); border-radius: 0.6rem; background: rgb(var(--g-900) / 0.8); padding: 0.6rem 0.85rem; }
+  .room-stat dt { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; color: rgb(var(--g-400)); }
+  .room-stat dd { margin-top: 2px; font-size: 1.45rem; font-weight: 650; line-height: 1.2; color: rgb(var(--g-100)); font-variant-numeric: tabular-nums; }
+  .room-stat dd small { font-size: 0.8rem; font-weight: 500; color: rgb(var(--g-500)); }
+  .room-stats2 { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
+  @media (min-width: 768px) { .room-stats2 { grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.2fr); } }
+  .ship-hero { display: flex; flex-direction: column; justify-content: space-between; gap: 1rem; border: 1px solid rgb(var(--g-700)); border-radius: 0.6rem; background: rgb(var(--g-900) / 0.8); padding: 1.25rem 1.25rem 1.1rem; min-height: 15rem; }
+  .ship-hero dt { font-size: 0.95rem; font-weight: 500; color: rgb(var(--g-300, var(--g-400))); }
+  .ship-hero dd#stat-shipped { font-size: 5.5rem; font-weight: 700; line-height: 1; letter-spacing: -0.03em; color: rgb(var(--pass-text)); font-variant-numeric: tabular-nums; }
+  .ship-hero .ship-sub { font-size: 0.95rem; color: rgb(var(--g-400)); }
+  .ship-track { margin-top: 0.6rem; height: 6px; border-radius: 999px; background: rgb(var(--g-800)); overflow: hidden; }
+  #stat-shipped-bar { height: 100%; width: 0; border-radius: 999px; background: rgb(var(--pass-text)); transition: width 400ms var(--ease, ease); }
+  .stat-list { border: 1px solid rgb(var(--g-700)); border-radius: 0.6rem; background: rgb(var(--g-900) / 0.8); display: flex; flex-direction: column; }
+  .stat-list > div { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 1.25rem; border-top: 1px solid rgb(var(--g-700)); }
+  .stat-list > div:first-child { border-top: 0; }
+  .stat-list dt { font-size: 0.95rem; color: rgb(var(--g-400)); }
+  .stat-list dd { font-size: 1.6rem; font-weight: 650; line-height: 1.1; color: rgb(var(--g-100)); font-variant-numeric: tabular-nums; }
+  .stat-list dd small { font-size: 0.85rem; font-weight: 500; color: rgb(var(--g-500)); }
+  .stat-list dd.is-go { color: rgb(var(--pass-text)); }
+  .desk-surface { overflow-x: auto; border: 1px solid rgb(var(--g-600)); border-radius: 0.75rem; background: rgb(var(--g-900)); padding: 0.7rem; }
+  .desk-grid { display: grid; grid-template-columns: repeat(8, minmax(88px, 1fr)); gap: 0.5rem; min-width: 730px; }
+  .desk-row-label { display: none; }
+  /* the small desk below the big one: two rows of 2 spots, each spot as wide as a spot of the big desk */
+  .desk-small-caption { margin: 0.75rem 0 0.35rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; color: rgb(var(--g-400)); }
+  .desk-surface.desk-small { width: calc((100% - 4.9rem - 2px) / 4 + 1.9rem + 2px); min-width: calc(176px + 1.9rem + 2px); overflow-x: visible; }
+  .desk-grid-small { display: grid; grid-template-columns: repeat(2, minmax(88px, 1fr)); gap: 0.5rem; }
+  .spot { position: relative; display: flex; min-height: 132px; flex-direction: column; align-items: center; justify-content: center; border-radius: 0.6rem; }
+  .spot-label { position: absolute; top: 5px; left: 8px; z-index: 1; font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.06em; color: rgb(var(--g-500)); pointer-events: none; }
+  .spot-free { cursor: pointer; border: 1px dashed rgb(var(--g-600)); background: rgb(var(--g-800) / 0.5); color: rgb(var(--g-500)); transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease; }
+  .spot-free:hover:not(:disabled), .spot-free:focus-visible { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.08); color: rgb(var(--leaf-500)); outline: none; }
+  .spot-free .spot-plus { font-size: 1.4rem; line-height: 1; font-weight: 300; }
+  .spot-free .spot-hint { margin-top: 4px; font-size: 0.68rem; font-weight: 600; opacity: 0; transition: opacity 150ms ease; }
+  .spot-free:hover .spot-hint, .spot-free:focus-visible .spot-hint { opacity: 1; }
+  .spot-target { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.1); color: rgb(var(--leaf-500)); }
+  .spot-busy { border: 1px solid rgb(var(--g-600)); background: rgb(var(--g-800)); transition: border-color 150ms ease, box-shadow 150ms ease; }
+  .spot-busy:hover { border-color: rgb(var(--g-500)); }
+  .spot-busy.is-selected { border-color: rgb(var(--leaf-500)); box-shadow: 0 0 0 2px rgb(var(--leaf-500) / 0.35); }
+  .spot-busy.is-ready { border-color: rgb(var(--pass) / 0.75); background: rgb(var(--pass) / 0.07); }
+  .spot-busy.is-moving { opacity: 0.55; }
+  .kiosk-btn { display: flex; width: 100%; cursor: pointer; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; padding: 17px 4px 8px; color: inherit; font: inherit; }
+  .kiosk-btn:focus-visible { outline: 2px solid rgb(var(--leaf-500)); outline-offset: -2px; border-radius: 0.6rem; }
+  .kiosk-svg { width: 56px; height: 56px; filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.35)); }
+  .kiosk-svg .d-tray { fill: #E8EBEC; } .kiosk-svg .d-tray-in { fill: #D6DBDD; } .kiosk-svg .d-arch { fill: #C5CCCF; } .kiosk-svg .d-arch-hi { fill: #F1F4F5; }
+  .kiosk-svg .d-vent line { stroke: #98A3A8; stroke-width: 0.9; stroke-linecap: round; } .kiosk-svg .d-screw { fill: #8D989D; }
+  .kiosk-svg .d-head { fill: #16191B; } .kiosk-svg .d-head-edge { fill: #2B3236; } .kiosk-svg .d-light { fill: #4C555B; }
+  .kiosk-svg .d-pay { fill: #2A2F33; } .kiosk-svg .d-pay-scr { fill: #5B6A72; } .kiosk-svg .d-halo { fill: none; }
+  .kiosk-svg.vs-done .d-light { fill: #2CF59E; } .kiosk-svg.vs-done .d-halo { fill: #2CF59E; opacity: 0.4; filter: blur(2.2px); }
+  .plate { font: 700 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; color: rgb(var(--g-100)); background: rgb(var(--g-700)); border-radius: 4px; padding: 0 6px; }
+  .next-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; padding: 1px 8px; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .chip-none { color: rgb(var(--g-300)); background: rgb(var(--g-700) / 0.8); }
+  .chip-run { color: #C98A00; background: rgb(232 174 12 / 0.16); }
+  :root[data-theme="dark"] .chip-run, :root:not([data-theme]) .chip-run { color: #F2B33D; }
+  .chip-go { color: rgb(var(--pass-text)); background: rgb(var(--pass) / 0.16); }
+  .dots { display: flex; gap: 3px; margin-top: 1px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--g-600)); }
+  .dot.done { background: rgb(var(--pass-text)); } .dot.run { background: #E8AE0C; }
+  /* InTune logo on the base: hidden until InTune is started, fades in and out while its timer runs, solid when done */
+  .kiosk-svg .d-it { display: none; }
+  .kiosk-svg.it-run .d-it, .kiosk-svg.it-done .d-it { display: inline; }
+  .kiosk-svg .d-it-shield { fill: #0F6CBD; }
+  .kiosk-svg .d-it-chk { fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; display: none; }
+  .kiosk-svg.it-done .d-it-chk { display: inline; }
+  .kiosk-svg.it-run .d-it { animation: it-pulse 1.6s ease-in-out infinite; }
+  @keyframes it-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.12; } }
+  @media (prefers-reduced-motion: reduce) { .kiosk-svg.it-run .d-it { animation: none; opacity: 0.6; } }
+  /* the little info icon under the spot name when a kiosk has notes, and the note bubble it opens */
+  .note-ic { position: absolute; top: 18px; left: 6px; z-index: 2; display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1.5px solid rgb(var(--leaf-500)); background: rgb(var(--g-900)); color: rgb(var(--leaf-500)); font: italic 700 10px/1 Georgia, "Times New Roman", serif; cursor: pointer; }
+  .note-ic:hover, .note-ic.is-pinned { background: rgb(var(--leaf-500)); color: #fff; }
+  .note-pop { position: fixed; z-index: 60; width: max-content; max-width: 16rem; border: 1px solid rgb(var(--g-600)); border-radius: 0.5rem; background: rgb(var(--g-800)); padding: 0.45rem 0.65rem 0.55rem; color: rgb(var(--g-100)); font-size: 0.8rem; line-height: 1.4; box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); }
+  .note-pop[hidden] { display: none; }
+  .note-pop.is-pinned { border-color: rgb(var(--leaf-500)); }
+  .note-pop-h { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; font-size: 0.7rem; color: rgb(var(--g-400)); }
+  .note-pop-h b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: rgb(var(--leaf-500)); }
+  .note-pop-x { margin-left: auto; border: 0; background: none; padding: 0 2px; color: rgb(var(--g-400)); cursor: pointer; font-size: 0.75rem; }
+  .note-pop-x:hover { color: rgb(var(--g-100)); }
+  .note-pop p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .batch-box { position: absolute; top: 4px; right: 5px; z-index: 2; width: 16px; height: 16px; cursor: pointer; accent-color: rgb(var(--leaf-500)); }
+  .spot-busy.is-picked { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.1); box-shadow: 0 0 0 2px rgb(var(--leaf-500) / 0.35); }
+  .spot-busy.is-dim { opacity: 0.45; }
+  .move-banner { border: 1px solid rgb(var(--leaf-500) / 0.6); border-radius: 0.5rem; background: rgb(var(--leaf-500) / 0.1); padding: 0.45rem 0.75rem; font-size: 0.85rem; color: rgb(var(--g-100)); }
+  .insp { border: 1px solid rgb(var(--g-600)); border-radius: 0.75rem; background: rgb(var(--g-900)); padding: 1rem; }
+  .insp-empty { border: 1px dashed rgb(var(--g-600)); border-radius: 0.75rem; padding: 1.25rem; color: rgb(var(--g-400)); font-size: 0.875rem; }
+  .step { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-top: 1px solid rgb(var(--g-700)); }
+  .step.wide { grid-template-columns: 1.25rem minmax(0, 1fr); align-items: start; }
+  .step .step-ic { align-self: start; }
+  .step:first-child { border-top: 0; }
+  .step-ic { margin-top: 2px; display: flex; height: 1.1rem; width: 1.1rem; align-items: center; justify-content: center; border-radius: 50%; border: 1.5px solid rgb(var(--g-500)); font-size: 0.65rem; font-weight: 800; color: transparent; }
+  .step.done .step-ic { border-color: rgb(var(--pass)); background: rgb(var(--pass)); color: #fff; }
+  .step.run .step-ic { border-color: #E8AE0C; background: rgb(232 174 12 / 0.25); }
+  .step-name { font-size: 0.875rem; font-weight: 650; color: rgb(var(--g-100)); }
+  .step-stat { margin-top: 1px; font-size: 0.78rem; line-height: 1.35; color: rgb(var(--g-400)); }
+  .step-ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.4rem; }
+  .step.wide .step-ctl { margin-top: 0.4rem; justify-content: flex-start; }
+  .btn-s { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 0.375rem; border: 1px solid rgb(var(--g-600)); background: transparent; padding: 0.3rem 0.7rem; font-size: 0.8rem; font-weight: 600; color: rgb(var(--g-200)); cursor: pointer; text-decoration: none; transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease; }
+  .btn-s:hover:not(:disabled) { border-color: rgb(var(--leaf-500)); color: rgb(var(--leaf-500)); }
+  .btn-s:disabled { cursor: not-allowed; opacity: 0.45; }
+  .btn-s.primary { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500)); color: #0f1a13; }
+  :root[data-theme="light"] .btn-s.primary { color: #fff; }
+  .btn-s.primary:hover:not(:disabled) { background: rgb(var(--leaf-600)); border-color: rgb(var(--leaf-600)); color: #0f1a13; }
+  :root[data-theme="light"] .btn-s.primary:hover:not(:disabled) { color: #fff; }
+  .btn-s.danger:hover:not(:disabled) { border-color: rgb(var(--fail)); color: rgb(var(--fail-text)); }
+  .btn-s.quiet { border-color: transparent; color: rgb(var(--g-400)); }
+  .countdown { font: 700 0.95rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgb(var(--g-100)); font-variant-numeric: tabular-nums; }
+  .switch { position: relative; display: inline-flex; height: 1.4rem; width: 2.5rem; cursor: pointer; }
+  .switch input { position: absolute; inset: 0; z-index: 1; margin: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+  .switch .tr { position: absolute; inset: 0; border-radius: 999px; background: rgb(var(--g-600)); transition: background-color 150ms ease; }
+  .switch .tr::after { content: ""; position: absolute; top: 3px; left: 3px; height: calc(1.4rem - 6px); width: calc(1.4rem - 6px); border-radius: 50%; background: #fff; transition: transform 150ms ease; }
+  .switch input:checked + .tr { background: rgb(var(--pass)); }
+  .switch input:checked + .tr::after { transform: translateX(1.1rem); }
+  .switch input:focus-visible + .tr { outline: 2px solid rgb(var(--leaf-500)); outline-offset: 2px; }
+  .switch input:disabled { cursor: not-allowed; } .switch:has(input:disabled) { opacity: 0.5; }
+  .room-toast { position: fixed; left: 50%; bottom: 1.25rem; z-index: 60; max-width: min(92vw, 30rem); transform: translateX(-50%); border: 1px solid rgb(var(--g-600)); border-radius: 0.6rem; background: rgb(var(--g-900)); padding: 0.6rem 1rem; font-size: 0.875rem; color: rgb(var(--g-100)); box-shadow: 0 10px 30px rgb(0 0 0 / 0.35); }
+  .room-toast.bad { border-color: rgb(var(--fail) / 0.7); color: rgb(var(--fail-text)); }
+  dialog.room-dlg { margin: auto; width: min(92vw, 26rem); border: 1px solid rgb(var(--g-600)); border-radius: 0.75rem; background: rgb(var(--g-900)); padding: 1.25rem; color: rgb(var(--g-100)); }
+  dialog.room-dlg::backdrop { background: rgb(0 0 0 / 0.55); }
+  .name-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+  .name-btn { border: 1px solid rgb(var(--g-600)); border-radius: 0.5rem; background: transparent; padding: 0.5rem 0.4rem; font-size: 0.875rem; font-weight: 600; color: rgb(var(--g-200)); cursor: pointer; }
+  .name-btn:hover, .name-btn[aria-pressed="true"] { border-color: rgb(var(--leaf-500)); background: rgb(var(--leaf-500) / 0.12); color: rgb(var(--g-100)); }
+  .tech-chip { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid rgb(var(--g-600)); border-radius: 999px; background: transparent; padding: 0.35rem 0.4rem 0.35rem 0.85rem; font-size: 0.8rem; color: rgb(var(--g-300)); cursor: pointer; }
+  .tech-chip b { color: rgb(var(--g-100)); font-weight: 650; }
+  .tech-chip .chg { border-radius: 999px; background: rgb(var(--g-700)); padding: 0.1rem 0.6rem; font-weight: 600; color: rgb(var(--g-200)); }
+  .tech-chip:hover { border-color: rgb(var(--leaf-500)); }
+  .tech-chip.none b { color: rgb(var(--fail-text)); }
+  </style>
 </head>
 
 <body class="grid-backdrop min-h-screen font-sans text-graphite-100 antialiased">
-
-  <div class="mx-auto max-w-6xl px-4 py-6 sm:py-10">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:py-10">
 
     <!-- Header -->
     <header class="mb-6 flex flex-wrap items-center justify-between gap-3 sm:mb-8">
@@ -222,6 +358,7 @@
         <h1 class="mt-1 text-2xl font-semibold text-graphite-100 sm:text-3xl">QA Dashboard</h1>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <button id="tech-chip" type="button" class="tech-chip none" title="Who is working at the desk. This name is written next to what you do."><span>Technician</span> <b id="tech-name">not chosen</b> <span class="chg">Change</span></button>
         <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch between dark and light theme"
           class="flex-shrink-0 rounded-md border border-graphite-600 p-2 text-graphite-300 transition hover:border-leaf-500 hover:text-leaf-500">
           <svg class="theme-icon-sun h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/></svg>
@@ -233,213 +370,100 @@
           </svg>
           Open sheet
         </a>
-        <a id="btn-start-qa1" href="qa-app.html?mode=qa1&start=1" title="The restart rounds, for several kiosks at once" class="flex items-center gap-1.5 rounded-md bg-leaf-500 px-4 py-2 text-sm font-semibold text-graphite-950 transition hover:bg-leaf-600">
-          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
-          </svg>
-          Start QA1
-        </a>
-        <button id="btn-start-qa2" type="button" title="Pick a kiosk that has finished QA1" class="rounded-md border border-graphite-600 px-4 py-2 text-sm font-semibold text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Start QA2</button>
-        <a id="btn-full-qa" href="qa-app.html?start=1" title="Every check in one go (the old way)" class="px-1 text-xs text-graphite-500 underline underline-offset-2 transition hover:text-graphite-300">Full QA</a>
       </div>
     </header>
 
-    <p id="load-status" class="sr-only" role="status">Loading submissions…</p>
-    <!-- grey placeholders instead of a "Loading…" text; replaced by the real overview and table -->
+    <p id="load-status" class="sr-only" role="status">Loading…</p>
     <div id="skeleton" class="mb-6" aria-hidden="true">
-      <div class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-5">
-        <div class="sk h-44 sm:col-span-2"></div>
-        <div class="sk h-44 sm:col-span-3"></div>
-      </div>
-      <div class="sk mb-3 h-24"></div>
-      <div class="overflow-hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-3">
-        <div class="sk mb-3 h-5 w-1/3"></div>
-        <div class="space-y-3">
-          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-20"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
-          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
-          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-16"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
-          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-20"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
-          <div class="flex items-center gap-4"><span class="sk h-4 w-5"></span><span class="sk h-4 w-28"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-24"></span><span class="sk h-4 w-10"></span><span class="sk h-4 w-10"></span><span class="sk ml-auto h-6 w-28"></span></div>
-        </div>
-      </div>
+      <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5"><div class="sk h-16"></div><div class="sk h-16"></div><div class="sk h-16"></div><div class="sk h-16"></div><div class="sk h-16 hidden sm:block"></div></div>
+      <div class="sk h-72"></div>
     </div>
 
-    <!-- Shown only when the Google Apps Script has a different checklist than this page (results would show under the wrong checks) -->
-    <div id="script-outdated-banner" class="mb-5 hidden rounded-lg border border-fail/60 bg-fail/10 px-4 py-3 text-sm text-graphite-100" role="alert">
-      <p class="font-semibold text-failtext">The Google Apps Script is out of date.</p>
-      <p class="mt-1">It sends results for a different checklist than this page has, so some results may show under the wrong check. Deploy the new version of <span class="font-mono">apps-script-code.gs</span> (Deploy → Manage deployments → New version), then reload this page.</p>
+    <div id="script-outdated-banner" class="mb-4 hidden rounded-lg border border-failtext/40 bg-fail/10 px-4 py-3 text-sm text-graphite-100" role="alert">
+      <p class="font-semibold text-failtext">The Google Apps Script is too old for the assembly desk.</p>
+      <p class="mt-1 text-graphite-300">Deploy the new script version (Deploy → Manage deployments → New version). Until then the desk cannot be used.</p>
     </div>
 
-    <!-- Stats — always the full totals, unaffected by filters -->
-    <div id="stats-grid" class="mb-6 hidden grid-cols-1 gap-3 sm:grid-cols-5">
-      <!-- Left: the number that matters most — kiosks that have been shipped (ticked in the table below) -->
-      <div class="flex flex-col justify-between rounded-lg border border-graphite-700 bg-graphite-900/80 p-5 sm:col-span-2">
-        <p class="text-sm font-medium text-graphite-300" title="Kiosks ticked as shipped in the table below.">Kiosks shipped</p>
-        <p id="stat-shipped" class="my-3 text-7xl font-semibold leading-none text-leaf-500">–</p>
-        <div>
-          <p id="stat-shipped-sub" class="text-sm text-graphite-300"></p>
-          <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-graphite-800">
-            <div id="stat-shipped-bar" class="h-full rounded-full bg-leaf-500 transition-all duration-300" style="width: 0%"></div>
+    <div id="room-wrap" class="hidden">
+      <!-- where the kiosks are -->
+      <div id="room-stats" class="room-stats2 mb-6">
+        <dl class="ship-hero">
+          <dt>Kiosks shipped</dt>
+          <dd id="stat-shipped">–</dd>
+          <div>
+            <p id="stat-shipped-sub" class="ship-sub">&nbsp;</p>
+            <div class="ship-track" aria-hidden="true"><div id="stat-shipped-bar"></div></div>
           </div>
-          <p id="ship-error" class="mt-2 hidden text-sm text-failtext" role="alert"></p>
-        </div>
+        </dl>
+        <dl class="stat-list">
+          <div><dt>On the desk</dt><dd id="stat-desk">–</dd></div>
+          <div><dt>Need QA1</dt><dd id="stat-q1">–</dd></div>
+          <div><dt>Need QA2</dt><dd id="stat-q2">–</dd></div>
+          <div><dt>Ready to ship</dt><dd id="stat-ready" class="is-go">–</dd></div>
+        </dl>
       </div>
-      <!-- Right: the other four, one under the other -->
-      <div class="divide-y divide-graphite-700 rounded-lg border border-graphite-700 bg-graphite-900/80 sm:col-span-3">
-        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
-          <p class="text-sm text-graphite-300" title="Every serial number is QA'd once, so this is also the number of inspections.">Kiosks QA'd</p>
-          <p id="stat-kiosks" class="text-2xl font-semibold text-graphite-100">0</p>
+
+      <section id="desk-section" aria-labelledby="desk-h" class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_21.5rem]">
+        <div class="min-w-0">
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="desk-h" class="text-lg font-semibold text-graphite-100">Assembly desk</h2>
+            <div id="desk-tools" class="flex flex-wrap items-center gap-2"></div>
+          </div>
+          <div id="move-banner" class="move-banner mb-2 hidden" role="status"></div>
+          <div class="desk-surface"><div id="desk" class="desk-grid" role="group" aria-label="Assembly desk with 16 spots"></div></div>
+          <p class="desk-small-caption" id="desk-c-h">Small desk · C1–C4</p>
+          <div class="desk-surface desk-small"><div id="desk-c" class="desk-grid-small" role="group" aria-labelledby="desk-c-h"></div></div>
+          <p class="mt-2 text-xs text-graphite-500">Click a free spot to put a kiosk there, or click a kiosk to see its steps and to start its QA. Tick the little box on kiosks that are ready for QA1 to start their QA1 together (up to 5). When kiosks are ready to ship, the box comes back: tick them to ship them together.</p>
         </div>
-        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
-          <p class="text-sm text-graphite-300" title="Kiosks whose QA1 is done and whose QA2 is still to come (see the 'Waiting for QA2' list below).">Waiting for QA2</p>
-          <p id="stat-qa2" class="text-2xl font-semibold text-graphite-100">–</p>
+        <aside id="inspector" aria-live="polite"></aside>
+      </section>
+
+      <!-- shipped kiosks -->
+      <section id="shipped-card" class="mt-8" aria-labelledby="shipped-h">
+        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div class="flex items-baseline gap-2">
+            <h2 id="shipped-h" class="text-lg font-semibold text-graphite-100">Shipped kiosks</h2>
+            <span id="shipped-count" class="text-sm text-graphite-500"></span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex cursor-pointer items-center gap-2 text-xs text-graphite-400" title="Kiosks that have a QA but were never put on the desk and are not shipped (for example from before the desk existed)">
+              <input id="show-offdesk" type="checkbox" class="h-4 w-4 cursor-pointer accent-leaf-500" /> Also show QA'd kiosks that are not on the desk <span id="offdesk-count"></span>
+            </label>
+            <input id="ship-search" type="search" placeholder="Search serial, name or place" autocomplete="off" spellcheck="false" aria-label="Search the kiosks by serial number, name or place" title="Type a serial (M-ABCDE), a name shown in the table (who shipped it or did the QA2, e.g. Dani) or a place (B6). Several words narrow it down, e.g. “Dani B6”."
+              class="w-60 rounded-md border border-graphite-600 bg-graphite-900 px-3 py-1.5 text-sm text-graphite-100 placeholder:text-graphite-500 focus:border-leaf-500 focus:outline-none" />
+          </div>
         </div>
-        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
-          <p class="text-sm text-graphite-300" title="QA'd kiosks that are not shipped yet and whose final check has not been done (see the 'Final check' column in the table below). Kiosks that were already shipped need none.">Waiting for final check</p>
-          <p id="stat-waiting" class="text-2xl font-semibold text-graphite-100">–</p>
+        <div id="shipped-table-card" class="relative overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
+          <table class="qa-table">
+            <thead>
+              <tr>
+                <th>Shipped</th>
+                <th>Serial</th>
+                <th title="The restart rounds and the power button test, done for several kiosks at once. A dash: a full QA (all checks in one go).">QA1</th>
+                <th>QA2</th>
+                <th>Pass</th>
+                <th>Fail</th>
+                <th title="The steps done on the desk, and the final check">Steps</th>
+                <th title="The desk spot where the kiosk was assembled (A1–B8 big desk, C1–C4 small desk)">Place</th>
+                <th><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="shipped-body"></tbody>
+          </table>
         </div>
-        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
-          <p class="text-sm text-graphite-300">Pass rate</p>
-          <p id="stat-passrate" class="text-2xl font-semibold text-leaf-500">0%</p>
+        <p id="shipped-empty" class="hidden rounded-lg border border-dashed border-graphite-600 px-4 py-8 text-center text-sm text-graphite-400"></p>
+        <div id="load-more-wrap" class="mt-3 hidden items-center justify-center gap-3">
+          <button id="btn-load-more" type="button" class="rounded-md border border-graphite-600 px-4 py-2 text-sm font-semibold text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Load more</button>
+          <span id="load-more-info" class="text-xs text-graphite-500"></span>
         </div>
-        <div class="flex items-baseline justify-between gap-4 px-5 py-3">
-          <p class="text-sm text-graphite-300">Total checks failed</p>
-          <p id="stat-fails" class="text-2xl font-semibold text-failtext">0</p>
-        </div>
-      </div>
+      </section>
     </div>
 
-    <!-- Technicians — name + count for everyone, always the full totals -->
-    <div id="technicians-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-graphite-200">Technicians</h2>
-      <div id="technicians-list" class="mt-3 flex flex-wrap gap-2"></div>
-    </div>
+    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-11-24.3</p>
 
-    <!-- Chart: QA volume by month — always the full totals -->
-    <div id="chart-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-graphite-200">QA processes by month</h2>
-      <div class="mt-4" style="height: 260px;">
-        <canvas id="monthly-chart"></canvas>
-      </div>
-    </div>
-
-    <!-- Filters -->
-    <div id="filters-card" class="mb-6 hidden rounded-lg border border-graphite-700 bg-graphite-900/80 p-4 sm:p-6">
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-graphite-400">Technician</label>
-          <select id="filter-technician" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500">
-            <option value="">All</option>
-          </select>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-graphite-400">Serial</label>
-          <input id="filter-serial" type="text" placeholder="e.g. M-ABCDE" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 font-mono text-sm text-graphite-100 placeholder-graphite-500 focus:border-leaf-500" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-graphite-400">From date</label>
-          <input id="filter-from" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" style="color-scheme: dark;" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-graphite-400">To date</label>
-          <input id="filter-to" type="date" class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-2.5 py-2 text-sm text-graphite-100 focus:border-leaf-500" style="color-scheme: dark;" />
-        </div>
-      </div>
-      <div class="mt-3 flex flex-wrap items-center gap-4">
-        <label class="flex items-center gap-2 text-sm text-graphite-300">
-          <input id="filter-only-fails" type="checkbox" class="h-4 w-4 rounded border-graphite-600 bg-graphite-800 text-leaf-500 focus:ring-leaf-500" />
-          Only inspections with at least one Fail
-        </label>
-        <label class="flex items-center gap-2 text-sm text-graphite-300">
-          Final check
-          <select id="filter-final" class="rounded-md border border-graphite-600 bg-graphite-800 px-2 py-1 text-sm text-graphite-100 focus:border-leaf-500 disabled:opacity-50">
-            <option value="">All</option>
-            <option value="waiting">Waiting</option>
-            <option value="done">Done</option>
-          </select>
-        </label>
-        <button id="btn-clear-filters" type="button" class="text-sm font-medium text-graphite-400 transition hover:text-leaf-500">Clear filters</button>
-        <span id="filter-count" class="ml-auto text-xs text-graphite-500"></span>
-      </div>
-    </div>
-
-    <!-- Which list: the finished inspections (the main table), the ones put aside, or the ones being worked on now -->
-    <div id="view-tabs" class="mb-3 hidden flex-wrap items-center gap-2" role="tablist" aria-label="Inspections">
-      <button type="button" role="tab" data-view="waiting" class="view-tab" aria-selected="false">Waiting for QA2 <span id="count-waiting" class="tab-count">0</span></button>
-      <button type="button" role="tab" data-view="finished" class="view-tab" aria-selected="true">Finished inspections</button>
-      <button type="button" role="tab" data-view="unfinished" class="view-tab" aria-selected="false">Unfinished inspections <span id="count-unfinished" class="tab-count">0</span></button>
-      <button type="button" role="tab" data-view="progress" class="view-tab" aria-selected="false">In progress inspections <span id="count-progress" class="tab-count">0</span></button>
-    </div>
-    <h2 id="table-title" class="mb-2 hidden text-base font-semibold text-graphite-100">Finished inspections</h2>
-
-    <!-- Finished inspections (the main table) -->
-    <div id="table-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
-      <table class="qa-table">
-        <thead>
-          <tr>
-            <th title="Tick when the kiosk has been sent out">Shipped</th>
-            <th>Date</th>
-            <th>Technician</th>
-            <th>Serial</th>
-            <th title="The restart rounds, done for several kiosks at once. A dash: a full QA (all checks in one go).">QA1</th>
-            <th>Pass</th>
-            <th>Fail</th>
-            <th title="Read the comment, then confirm the final check. A QA is done once its kiosk has passed it.">Final check</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-      </table>
-    </div>
-    <div id="load-more-wrap" class="mt-3 hidden text-center">
-      <button id="btn-load-more" type="button" class="rounded-md border border-graphite-600 px-5 py-2 text-sm font-medium text-graphite-200 transition hover:border-leaf-500 hover:text-leaf-500">Load more</button>
-      <p id="load-more-info" class="mt-1 text-xs text-graphite-500"></p>
-    </div>
-
-    <!-- Waiting for QA2: the QA1 is done, the QA2 of the kiosk is still to come -->
-    <div id="waiting-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
-      <table class="qa-table">
-        <thead>
-          <tr>
-            <th>Serial</th>
-            <th>QA1 by</th>
-            <th>QA1 date</th>
-            <th>Batch</th>
-            <th>QA1 result</th>
-            <th title="Since the QA1 was submitted">Waiting</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="waiting-body"></tbody>
-      </table>
-    </div>
-
-    <!-- Unfinished (put aside, to be resumed) and in progress (being worked on now; view only) -->
-    <div id="drafts-card" class="hidden overflow-x-auto rounded-lg border border-graphite-700 bg-graphite-900/80">
-      <table class="qa-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Technician</th>
-            <th>Serial</th>
-            <th>Status</th>
-            <th>QA time so far</th>
-            <th id="drafts-actions-th"></th>
-          </tr>
-        </thead>
-        <tbody id="drafts-body"></tbody>
-      </table>
-    </div>
-
-    <p id="empty-state" class="hidden rounded-lg border border-dashed border-graphite-700 bg-graphite-900/40 p-6 text-center text-sm text-graphite-500">
-      No inspections match the current filters.
-    </p>
-
-    <p class="mt-8 text-center text-[12px] text-graphite-500">Version 2026-10-22.1</p>
   </div>
 
-  <!-- Detail modal -->
-  <div id="detail-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
+<div id="detail-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70 p-4">
     <div class="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-graphite-700 bg-graphite-900 p-5 shadow-xl">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -453,8 +477,6 @@
     </div>
   </div>
 
-
-<!-- Asks for the team's access code (only when the Apps Script has one set). Opaque: nothing behind it can be read. -->
 <div id="access-gate" class="fixed inset-0 z-[60] items-center justify-center bg-graphite-950 p-4" role="dialog" aria-modal="true" aria-labelledby="access-title">
   <form id="access-form" autocomplete="off" class="w-full max-w-xs rounded-lg border border-graphite-700 bg-graphite-900 p-6 shadow-xl">
     <p class="text-center font-mono text-sm font-semibold tracking-[0.3em] text-leaf-500">HARDWARE</p>
@@ -467,52 +489,74 @@
   </form>
 </div>
 
+<div id="room-toast" class="room-toast hidden" role="status" aria-live="polite"></div>
+
+<dialog class="room-dlg" id="room-dlg" aria-labelledby="room-dlg-title">
+  <form id="room-dlg-form" novalidate>
+    <h2 id="room-dlg-title" class="text-lg font-semibold text-graphite-100"></h2>
+    <p id="room-dlg-text" class="mt-1 text-sm text-graphite-300"></p>
+    <div id="room-dlg-names" class="mt-3 hidden">
+      <div id="room-dlg-name-grid" class="name-grid"></div>
+      <input id="room-dlg-other" type="text" maxlength="40" autocomplete="off" placeholder="Other: type your name" aria-label="Your name"
+        class="mt-2 w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-sm text-graphite-100 placeholder:text-graphite-500 focus:border-leaf-500 focus:outline-none" />
+    </div>
+    <div id="room-dlg-field" class="mt-3 hidden">
+      <label id="room-dlg-label" for="room-dlg-input" class="mb-1 block text-sm font-medium text-graphite-200"></label>
+      <input id="room-dlg-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        class="w-full rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 font-mono text-base tracking-wide text-graphite-100 focus:border-leaf-500 focus:outline-none" />
+      <p id="room-dlg-hint" class="mt-1 min-h-[1.1rem] text-xs text-graphite-400" aria-live="polite"></p>
+    </div>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" id="room-dlg-cancel" class="btn-s">Cancel</button>
+      <button type="submit" id="room-dlg-ok" class="btn-s primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 (function () {
-  "use strict";
+"use strict";
 
-  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwjuJps3AKQs6A3aZ8IO88HkvdKmptGXM7p89JIC0CFywJW01KWs6VQIrULZIcHROxEvw/exec";
 
-  // =====================================================================
-  // ACCESS CODE — the Apps Script only answers to people who know the team's access code.
-  // It is asked for once (and remembered on this computer); every request carries it and the SCRIPT checks it,
-  // so this page keeps nothing secret. If no code is set in the script, nothing is asked at all.
-  // =====================================================================
-  const ACCESS_KEY = "qaAccessCode";
-  const ACCESS_PASS_KEY = "qaAccessPass";
-  const ACCESS_PAGE_IS_DASHBOARD = true;
-  // How often the code is asked for is decided in the Apps Script:
-  //   "visit"   every time the dashboard is opened (coming back from a QA form you were just working in does not ask again),
-  //   "session" once, until the tab or the browser is closed,
-  //   "device"  once; this computer then remembers it.
-  // Where the code is kept follows from that: this computer for "device", this tab only for the others.
-  let accessMode = "device";
-  const readStore = (name) => { try { return window[name].getItem(ACCESS_KEY) || ""; } catch (e) { return ""; } };
-  const getAccessCode = () => readStore("sessionStorage") || readStore("localStorage");
-  function storeAccessCode(code) {
+const ACCESS_KEY = "qaAccessCode";
+
+const ACCESS_PASS_KEY = "qaAccessPass";
+
+const ACCESS_PAGE_IS_DASHBOARD = true;
+
+let accessMode = "device";
+
+const readStore = (name) => { try { return window[name].getItem(ACCESS_KEY) || ""; } catch (e) { return ""; } };
+
+const getAccessCode = () => readStore("sessionStorage") || readStore("localStorage");
+
+function storeAccessCode(code) {
     try {
       if (accessMode === "device") { localStorage.setItem(ACCESS_KEY, code); sessionStorage.removeItem(ACCESS_KEY); }
       else { sessionStorage.setItem(ACCESS_KEY, code); localStorage.removeItem(ACCESS_KEY); }
     } catch (e) { /* ignore */ }
   }
-  function forgetAccessCode() {
+
+function forgetAccessCode() {
     try { sessionStorage.removeItem(ACCESS_KEY); localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ }
   }
-  // The QA form leaves a short-lived "pass" when it is left, so that coming back to the dashboard from a QA does not ask again.
-  if (!ACCESS_PAGE_IS_DASHBOARD) {
+
+if (!ACCESS_PAGE_IS_DASHBOARD) {
     window.addEventListener("pagehide", () => { try { if (getAccessCode()) sessionStorage.setItem(ACCESS_PASS_KEY, String(Date.now())); } catch (e) { /* ignore */ } });
   }
-  function takeReturnPass() {
+
+function takeReturnPass() {
     try {
       const t = Number(sessionStorage.getItem(ACCESS_PASS_KEY));
       sessionStorage.removeItem(ACCESS_PASS_KEY);
       return t > 0 && Date.now() - t < 120000;
     } catch (e) { return false; }
   }
-  const rawFetch = window.fetch.bind(window);
 
-  // every request to the Apps Script gets the code added (as a URL parameter, or inside the JSON that is sent)
-  window.fetch = function (input, init) {
+const rawFetch = window.fetch.bind(window);
+
+window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : (input && input.url) || "";
     const code = getAccessCode();
     if (!code || url.indexOf(WEBHOOK_URL) !== 0) return rawFetch(input, init);
@@ -537,13 +581,11 @@
     });
   };
 
-  // what the Apps Script last said is kept here, so that the NEXT visit can decide before anything is drawn
-  function rememberAccessInfo(needed, mode) {
+function rememberAccessInfo(needed, mode) {
     try { localStorage.setItem("qaAccessNeeded", needed); if (mode) localStorage.setItem("qaAccessMode", mode); } catch (e) { /* ignore */ }
   }
 
-  // "open" (no code needed) | "valid" | "invalid" | "unknown" (no connection, or a script that does not have codes yet: nothing is asked)
-  async function checkAccessNow(candidate) {
+async function checkAccessNow(candidate) {
     try {
       const code = candidate === undefined ? getAccessCode() : candidate;
       const res = await rawFetch(`${WEBHOOK_URL}?action=checkAccess&code=${encodeURIComponent(code)}`);
@@ -558,15 +600,16 @@
     }
   }
 
-  let accessGate = null;
-  let finishGateFn = null;
-  function closeAccessGate() {
+let accessGate = null;
+
+let finishGateFn = null;
+
+function closeAccessGate() {
     if (finishGateFn) finishGateFn();
     document.documentElement.classList.remove("gate-pending");
   }
-  // The window that asks for the code. It covers the whole page (nothing behind it can be read), and goes away
-  // when a right code has been entered. Asked again while it is open, it is the same window.
-  function askForAccessCode(message) {
+
+function askForAccessCode(message) {
     const gate = document.getElementById("access-gate");
     const input = document.getElementById("access-input");
     const err = document.getElementById("access-error");
@@ -615,12 +658,11 @@
     return accessGate;
   }
 
-  function passIsFresh() {
+function passIsFresh() {
     try { const t = Number(sessionStorage.getItem(ACCESS_PASS_KEY)); return t > 0 && Date.now() - t < 120000; } catch (e) { return false; }
   }
 
-  // What the Apps Script's answer means for this page: "ask" (the code is typed) or "ok".
-  function decideAfterCheck(state) {
+function decideAfterCheck(state) {
     if (state === "open" || state === "unknown") return "ok";
     // a code kept from an earlier setting is dropped when the setting says it must not be kept on this computer
     if (accessMode !== "device" && readStore("localStorage")) { try { localStorage.removeItem(ACCESS_KEY); } catch (e) { /* ignore */ } if (!readStore("sessionStorage")) state = "invalid"; }
@@ -630,14 +672,9 @@
     return state === "invalid" ? "ask" : "ok";
   }
 
-  // Resolves when the page may talk to the Apps Script.
-  //  - A code is known and the last answer of the Apps Script said it is enough here: the page starts AT ONCE (the Apps Script
-  //    refuses a wrong code anyway). The check runs alongside; if the code turns out to be wrong, the window comes up and the
-  //    page is started afresh once a right one has been typed.
-  //  - Otherwise the window is already up (see the <head>); the check runs while the code is being typed, and takes the window
-  //    away again by itself if no code is needed after all.
-  let accessReady = null;
-  function ensureAccess() {
+let accessReady = null;
+
+function ensureAccess() {
     if (accessReady) return accessReady;
     let cachedMode = null;
     try { cachedMode = localStorage.getItem("qaAccessMode"); } catch (e) { /* ignore */ }
@@ -656,11 +693,9 @@
     return accessReady;
   }
 
-  // The window is put up at once when the early decision in the <head> said so (without waiting for the Apps Script).
-  if (document.documentElement.classList.contains("gate-pending")) askForAccessCode();
+if (document.documentElement.classList.contains("gate-pending")) askForAccessCode();
 
-  // Must match the app's CHECKLISTS exactly (section order + item order).
-  const SECTIONS = {
+const SECTIONS = {
     2: { title: "Functional checks", items: [
       "Round 1 - Restart Jetson (OS restart) 1x","Round 1 - Jetson power cycle 1x","Round 1 - Jetson Recovery 1x","Round 1 - Jetson Reset 1x","Round 1 - Restart NUCU","Round 1 - NUCU power cycle",
       "Round 2 - Restart Jetson (OS restart) 1x","Round 2 - Jetson power cycle 1x","Round 2 - Jetson Recovery 1x","Round 2 - Jetson Reset 1x","Round 2 - Restart NUCU","Round 2 - NUCU power cycle",
@@ -682,12 +717,12 @@
       "Connector cover fit","ESD check",
     ]},
   };
-  const SECTION_KEYS = Object.keys(SECTIONS);
 
-  let allSubmissions = [];
-  let monthlyChart = null;
+const SECTION_KEYS = Object.keys(SECTIONS);
 
-  function countResults(sub) {
+let allSubmissions = [];
+
+function countResults(sub) {
     let pass = 0, fail = 0;
     SECTION_KEYS.forEach((step) => {
       (sub.checklist[step] || []).forEach((v) => {
@@ -698,7 +733,7 @@
     return { pass, fail };
   }
 
-  async function loadSubmissions() {
+async function loadSubmissions() {
     try {
       const res = await fetch(`${WEBHOOK_URL}?action=listSubmissions`);
       const data = await res.json();
@@ -713,34 +748,7 @@
     }
   }
 
-  // The technician list covers everyone with a finished QA AND everyone with one in progress,
-  // and is kept up to date as the data changes (a new technician can appear at any time).
-  function populateFilterOptions() {
-    const techSelect = document.getElementById("filter-technician");
-    const wanted = [...new Set([...latestPerKiosk(allSubmissions).map((s) => s.technician), ...lastDrafts.map((d) => d.technician)].filter(Boolean))].sort();
-    const have = Array.from(techSelect.options).map((o) => o.value).filter(Boolean);
-    if (wanted.join("\u0001") === have.join("\u0001")) return; // nothing new
-    const selected = techSelect.value;
-    techSelect.innerHTML = '<option value="">All</option>' + wanted.map((t) => `<option value="${String(t).replace(/"/g, "&quot;")}">${escapeHtml(t)}</option>`).join("");
-    if (wanted.includes(selected)) techSelect.value = selected;
-  }
-
-  function getFilters() {
-    return {
-      technician: document.getElementById("filter-technician").value,
-      serial: document.getElementById("filter-serial").value.trim().toUpperCase(),
-      from: document.getElementById("filter-from").value,
-      to: document.getElementById("filter-to").value,
-      onlyFails: document.getElementById("filter-only-fails").checked,
-      final: document.getElementById("filter-final").value,
-    };
-  }
-
-  // One row per kiosk. A kiosk that was QA'd more than once keeps ONE row: the
-  // table shows its latest QA (and who did it). Every earlier QA stays in the
-  // Sheet and can be opened from the Details window ("QA history"). Each
-  // submission gets __runs: all QAs of that serial, oldest first.
-  function groupBySerial(list) {
+function groupBySerial(list) {
     const bySerial = new Map();
     list.forEach((s) => {
       const key = (s.serial || "").trim().toUpperCase();
@@ -759,266 +767,47 @@
     return groups;
   }
 
-  // The filters look at each kiosk as it stands now (its latest QA).
-  function applyFilters(submissions, f) {
-    return groupBySerial(submissions)
-      .filter((runs) => {
-        const latest = currentOfKiosk(runs);
-        if (f.technician && latest.technician !== f.technician) return false;
-        if (f.serial && !(latest.serial || "").toUpperCase().includes(f.serial)) return false;
-        if (f.from && latest.inspectionDate < f.from) return false;
-        if (f.to && latest.inspectionDate > f.to) return false;
-        if (f.onlyFails && countResults(latest).fail === 0) return false;
-        if (f.final === "waiting" && !needsFinal(serialKey(latest.serial))) return false;
-        if (f.final === "done" && !isFinalDone(serialKey(latest.serial))) return false;
-        return true;
-      })
-      .map(currentOfKiosk)
-      .sort((a, b) => {
-        if (a.inspectionDate !== b.inspectionDate) {
-          return a.inspectionDate < b.inspectionDate ? 1 : -1; // newest date first
-        }
-        // same day: the most recent submission first — but the kiosks of ONE submission stay in
-        // the order they were entered (the same order the in-progress rows had)
-        const startOf = (s) => (typeof s.__sessionStart === "number" ? s.__sessionStart : s.__order || 0);
-        if (startOf(a) !== startOf(b)) return startOf(b) - startOf(a);
-        return (a.row !== undefined ? a.row : a.__order || 0) - (b.row !== undefined ? b.row : b.__order || 0);
-      });
-  }
-
-  // Every serial number is QA'd once, so the overview counts KIOSKS (and a kiosk is looked at as it stands now:
-  // its latest QA). For older data with a kiosk QA'd more than once, only that latest QA counts.
-  // A kiosk as it stands now: the data of its latest QA (date, results, comment), under the name of the
-  // technician who QA'd it FIRST. (Normally there is one QA per kiosk; older data may have more.)
-  function currentOfKiosk(runs) {
+function currentOfKiosk(runs) {
     const latest = runs[runs.length - 1];
     // (rawTechnician: whose name stands on the Sheet's row itself; saving a changed result must name exactly that row)
     return runs.length > 1 && runs[0].technician !== latest.technician ? Object.assign({}, latest, { technician: runs[0].technician, rawTechnician: latest.technician }) : latest;
   }
 
-  function latestPerKiosk(list) {
+function latestPerKiosk(list) {
     return groupBySerial(list).map(currentOfKiosk);
   }
 
-  // ---------- numbers that count up to their value (and only when the value changes) ----------
-  const reduceMotion = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-
-  function showText(el, text) { // a state that is not a number ("–", "…")
-    cancelAnimationFrame(el.__raf);
-    el.__cur = undefined;
-    el.textContent = text;
-  }
-
-  function setCount(el, to, suffix) {
-    suffix = suffix || "";
-    const target = Number(to);
-    cancelAnimationFrame(el.__raf);
-    if (!isFinite(target) || reduceMotion() || typeof requestAnimationFrame !== "function") { el.__cur = target; el.textContent = to + suffix; return; }
-    const from = el.__cur === undefined ? 0 : el.__cur;
-    if (from === target) { el.textContent = target + suffix; return; }
-    const duration = el.__cur === undefined ? 700 : 350; // the first time a little slower, later changes quicker
-    const t0 = performance.now();
-    const step = (now) => {
-      const t = Math.min(1, (now - t0) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      el.__cur = from + (target - from) * eased;
-      el.textContent = Math.round(el.__cur) + suffix;
-      if (t < 1) el.__raf = requestAnimationFrame(step);
-      else { el.__cur = target; el.textContent = target + suffix; }
-    };
-    el.__raf = requestAnimationFrame(step);
-  }
-
-  function renderStats(data) {
-    const kiosks = latestPerKiosk(data);
-    let totalPass = 0, totalFail = 0;
-    kiosks.forEach((s) => {
-      const { pass, fail } = countResults(s);
-      totalPass += pass;
-      totalFail += fail;
-    });
-    const total = totalPass + totalFail;
-    const passRate = total > 0 ? Math.round((totalPass / total) * 100) : 0;
-
-    setCount(document.getElementById("stat-kiosks"), kiosks.length);
-    setCount(document.getElementById("stat-passrate"), passRate, "%");
-    setCount(document.getElementById("stat-fails"), totalFail);
-    renderShippedStat();
-    updateScriptBanner(data);
-  }
-
-  // The Apps Script and this page must have the same checklist. A script that is a version behind
-  // sends shorter lists of results, and those would be shown under the wrong checks.
-  function updateScriptBanner(list) {
-    const keys = Object.keys(SECTIONS);
-    const mismatch = list.some((s) => keys.some((k) => !s.checklist || !Array.isArray(s.checklist[k]) || s.checklist[k].length !== SECTIONS[k].items.length));
-    document.getElementById("script-outdated-banner").classList.toggle("hidden", !mismatch);
-  }
-
-  // How many kiosks each technician QA'd (each serial counts once, for whoever QA'd it).
-  function renderTechnicians(data) {
-    const counts = {};
-    latestPerKiosk(data).forEach((s) => {
-      const name = s.technician || "(unknown)";
-      counts[name] = (counts[name] || 0) + 1;
-    });
-    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-
-    const list = document.getElementById("technicians-list");
-    if (entries.length === 0) {
-      list.innerHTML = `<p class="text-sm text-graphite-500">No inspections yet.</p>`;
-      return;
-    }
-    list.innerHTML = entries
-      .map(
-        ([name, count]) => `
-          <span class="flex items-center gap-1.5 rounded-full border border-graphite-600 bg-graphite-800 px-3 py-1.5 text-sm">
-            <span class="text-graphite-200">${escapeHtml(name)}</span>
-            <span class="rounded-full bg-leaf-500/15 px-2 py-0.5 text-xs font-semibold text-leaf-500">${count}</span>
-          </span>
-        `
-      )
-      .join("");
-  }
-
-  // The current theme's colour as an rgb() string, e.g. themeColor("--leaf-500").
-  function themeColor(name) {
-    const parts = getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/);
-    return parts.length === 3 ? `rgb(${parts.join(",")})` : "#888";
-  }
-
-  function renderChart(data) {
-    if (typeof Chart === "undefined") {
-      document.getElementById("chart-card").classList.add("hidden");
-      return;
-    }
-    document.getElementById("chart-card").classList.remove("hidden");
-
-    try {
-      const counts = {}; // "YYYY-MM" -> count
-      latestPerKiosk(data).forEach((s) => {
-        const month = (s.inspectionDate || "").slice(0, 7); // "YYYY-MM"
-        if (!month) return;
-        counts[month] = (counts[month] || 0) + 1;
-      });
-
-      const months = Object.keys(counts).sort();
-      const labels = months.map((m) => {
-        const [y, mo] = m.split("-");
-        const d = new Date(Number(y), Number(mo) - 1, 1);
-        return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-      });
-      const values = months.map((m) => counts[m]);
-
-      const ctx = document.getElementById("monthly-chart").getContext("2d");
-      if (monthlyChart) monthlyChart.destroy();
-      monthlyChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [{ label: "QA processes", data: values, backgroundColor: themeColor("--leaf-500") }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { ticks: { color: themeColor("--g-200") }, grid: { display: false } },
-            y: { ticks: { color: themeColor("--g-300"), precision: 0 }, grid: { color: themeColor("--g-700") }, beginAtZero: true },
-          },
-        },
-      });
-    } catch (err) {
-      console.error("Chart rendering failed:", err);
-      document.getElementById("chart-card").classList.add("hidden");
-    }
-  }
-
-  function escapeHtml(str) {
+function escapeHtml(str) {
     const div = document.createElement("div");
     div.textContent = str == null ? "" : str;
     return div.innerHTML;
   }
 
-  // ---------------------------------------------------------------------
-  // UNFINISHED INSPECTIONS (drafts) — started in the wizard but not yet submitted.
-  // They are shown as "currently in progress" rows at the top of the table, one row
-  // per kiosk. Once the inspection is submitted, the row turns into the usual one.
-  // ---------------------------------------------------------------------
-  const PAGE_SIZE = 20;           // the finished list shows this many kiosks at first, and this many more each time
-  let visibleLimit = PAGE_SIZE;
-  let view = "finished";          // which list is open: "waiting" | "finished" | "unfinished" | "progress"
-  let lastQa1 = [];               // the kiosks whose QA1 is done and whose QA2 is still to come (oldest first)
-  let qa1State = "loading";       // "loading" | "ready" | "unsupported" (an Apps Script that does not know QA1 yet)
-  // An inspection that was not put aside on purpose but has not been saved for this long is counted as left behind.
-  const ACTIVE_FRESH_MS = 10 * 60 * 1000;
-  let dataLoaded = false;         // the first load of the submissions has finished
-  let lastDrafts = [];            // the unfinished inspections as last fetched from the server
-  let currentProgress = [];       // the "in progress" rows (after the filters)
-  let currentUnfinished = [];     // the "unfinished" rows (after the filters)
-  const justFinished = new Set(); // serials whose row has just turned from "in progress" into a finished one
+const PAGE_SIZE = 20;
 
-  // ---------------------------------------------------------------------
-  // SHIPPING — a checkbox per kiosk ("already sent out"). The marks live in the Sheet (the
-  // "Shipped" tab), so everyone sees the same; the number at the top counts them.
-  // ---------------------------------------------------------------------
-  let shippedMap = new Map();     // SERIAL -> { by, at } for every kiosk marked as shipped
-  let shipState = "loading";      // "loading" | "ready" | "unsupported" (older Apps Script) | "error"
-  const shippedBusy = new Set();  // serials whose change is on its way to the server right now
-  let shipErrorTimer = null;
+let visibleLimit = PAGE_SIZE;
 
-  const serialKey = (serial) => String(serial || "").trim().toUpperCase();
+let lastQa1 = [];
 
-  function shipTitle(key) {
-    if (shipState === "unsupported") return "Shipping marks need the updated Apps Script (Deploy a new version).";
-    if (shipState === "loading") return "Loading…";
-    if (shipState === "error") return "Could not load the shipping marks. Retrying…";
-    if (shippedBusy.has(key)) return "Saving…";
-    const m = shippedMap.get(key);
-    if (!m) return "Mark as shipped";
-    const when = m.at ? new Date(m.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-    return "Shipped" + (when ? " " + when : "") + (m.by ? " · " + m.by : "");
-  }
+let qa1State = "loading";
 
-  function shipBoxHtml(serial) {
-    const key = serialKey(serial);
-    if (!key) return "";
-    const disabled = shipState !== "ready" || shippedBusy.has(key);
-    return `<input type="checkbox" data-ship-serial="${attr(key)}" class="h-[18px] w-[18px] cursor-pointer accent-leaf-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Shipped: ${attr(key)}" title="${attr(shipTitle(key))}"${shippedMap.has(key) ? " checked" : ""}${disabled ? " disabled" : ""}>`;
-  }
+const ACTIVE_FRESH_MS = 10 * 60 * 1000;
 
-  // How many of the QA'd kiosks are shipped, and the line under the big number.
-  function renderShippedStat() {
-    const kiosks = new Set(allSubmissions.map((s) => serialKey(s.serial)).filter(Boolean));
-    renderFinalStat();
-    let shipped = 0;
-    kiosks.forEach((k) => { if (shippedMap.has(k)) shipped++; });
-    const numEl = document.getElementById("stat-shipped");
-    const subEl = document.getElementById("stat-shipped-sub");
-    const barEl = document.getElementById("stat-shipped-bar");
-    if (shipState === "ready") {
-      setCount(numEl, shipped);
-      subEl.textContent = `of ${kiosks.size} QA'd kiosks · ${kiosks.size - shipped} still to ship`;
-      barEl.style.width = (kiosks.size ? Math.round((shipped / kiosks.size) * 100) : 0) + "%";
-    } else {
-      showText(numEl, shipState === "loading" ? "…" : "–");
-      subEl.textContent = shipState === "unsupported" ? "Update the Apps Script to track shipping"
-        : shipState === "error" ? "Couldn't load the shipping status — retrying" : "Loading…";
-      barEl.style.width = "0%";
-    }
-  }
+let dataLoaded = false;
 
-  function showShipError(message) {
-    const el = document.getElementById("ship-error");
-    el.textContent = message;
-    el.classList.remove("hidden");
-    clearTimeout(shipErrorTimer);
-    shipErrorTimer = setTimeout(() => el.classList.add("hidden"), 9000);
-  }
+let lastDrafts = [];
 
-  // The server's list is the truth — except for a kiosk whose change is still on its way
-  // (that one keeps what the person just did until the server has answered).
-  function applyShippedList(list) {
+const justFinished = new Set();
+
+let shippedMap = new Map();
+
+let shipState = "loading";
+
+const shippedBusy = new Set();
+
+const serialKey = (serial) => String(serial || "").trim().toUpperCase();
+
+function applyShippedList(list) {
     const next = new Map();
     list.forEach((x) => { if (x && x.serial) next.set(serialKey(x.serial), { by: x.by || "", at: x.at || "" }); });
     shippedBusy.forEach((k) => {
@@ -1027,128 +816,44 @@
     shippedMap = next;
   }
 
-  // Ticking / un-ticking a box. The change shows at once; if the server cannot save it, it is
-  // undone and the person is told.
-  async function toggleShipped(serial, wantShipped) {
-    const key = serialKey(serial);
-    if (!key || shipState !== "ready" || shippedBusy.has(key)) return;
-    const before = shippedMap.get(key);
-    shippedBusy.add(key);
-    if (wantShipped) shippedMap.set(key, { by: "", at: new Date().toISOString() });
-    else shippedMap.delete(key);
-    document.getElementById("ship-error").classList.add("hidden");
-    renderShippedStat();
-    refresh();
-    focusShipBox(key);
+const justDone = new Set();
 
-    try {
-      const res = await fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "setShipped", serial: key, shipped: wantShipped }),
-      });
-      const data = await res.json();
-      if (!data || data.ok !== true || !Array.isArray(data.shipped)) throw new Error((data && data.error) || "not accepted");
-      shippedBusy.delete(key);
-      applyShippedList(data.shipped);
-    } catch (err) {
-      console.error("Could not save the shipped mark:", err);
-      shippedBusy.delete(key);
-      if (before) shippedMap.set(key, before); else shippedMap.delete(key);
-      showShipError(`Couldn't save the shipped mark for ${key}, so nothing was changed. Check the connection and try again.`);
-    }
-    lastLiveSignature = liveSignature(); // what is on screen IS the current state: the next refresh has nothing to redraw
-    renderShippedStat();
-    refresh();
-    focusShipBox(key);
-  }
+let finalMap = new Map();
 
-  // The table is redrawn after a change; keep the keyboard where it was.
-  function focusShipBox(key) {
-    const box = Array.from(document.querySelectorAll("input[data-ship-serial]")).find((b) => b.dataset.shipSerial === key);
-    if (box && !box.disabled) box.focus({ preventScroll: true });
-  }
+let finalState = "loading";
 
-  // ---------------------------------------------------------------------
-  // FINAL CHECK — the last look at a finished QA. Someone reads the QA's comment, opens the final check
-  // (a window like Details, but with a note box), writes down what was done about anything that failed
-  // (e.g. "LED strip replaced, tested OK") and confirms it; only then is the kiosk's QA done. Kiosks still
-  // waiting are marked "Waiting". The marks and notes live in the Sheet (the "Final check" tab), so everyone
-  // sees the same. No names are kept. The comment written at the QA itself is never changed.
-  // ---------------------------------------------------------------------
-  const justDone = new Set();     // kiosks whose final check has JUST turned done: their badge pops and the row flashes once
-  let finalMap = new Map();       // SERIAL -> { done, at, note } for every kiosk that has a final-check record
-  let finalState = "loading";     // "loading" | "ready" | "unsupported" (older Apps Script) | "error"
+const isFinalDone = (key) => { const m = finalMap.get(key); return !!(m && m.done); };
 
-  const isFinalDone = (key) => { const m = finalMap.get(key); return !!(m && m.done); };
-  const finalNoteOf = (key) => { const m = finalMap.get(key); return m && m.note ? m.note : ""; };
+const finalNoteOf = (key) => { const m = finalMap.get(key); return m && m.note ? m.note : ""; };
 
-  // A shipped kiosk is finished: its final check is not waited for (it can still show one that was done).
-  const isShipped = (key) => shipState === "ready" && shippedMap.has(key);
-  const needsFinal = (key) => !isFinalDone(key) && !isShipped(key);
+const isShipped = (key) => shipState === "ready" && shippedMap.has(key);
 
-  function finalTitle() {
-    if (finalState === "unsupported") return "The final check needs the updated Apps Script (Deploy a new version).";
-    if (finalState === "loading") return "Loading…";
-    if (finalState === "error") return "Could not load the final checks. Retrying…";
-    return "Open the final check of this kiosk";
-  }
-
-  function finalWhen(m) {
+function finalWhen(m) {
     if (!m || !m.at) return "";
     const d = new Date(m.at);
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  // "Oct 12 · Dani": when the final check was confirmed, and by whom.
-  function finalWhenBy(m) {
+function finalWhenBy(m) {
     return [finalWhen(m), m && m.by].filter(Boolean).join(" · ");
   }
 
-  // The cell of the "Final check" column is kept short; who, when and the note are in Details:
-  //   still to do:  just the "Final check" button      done:  just "✓ Done" (pressing it opens the final check window)
-  //   shipped and never final-checked:  just "—" (it was finished and shipped before; nothing is waited for)
-  function finalCellHtml(serial) {
-    const key = serialKey(serial);
-    if (!key) return "";
-    const disabled = finalState !== "ready" ? "disabled" : "";
-    const dis = "disabled:cursor-not-allowed disabled:opacity-50";
-    if (isFinalDone(key)) {
-      return `<div data-final-state="done"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalState === "ready" ? "Final check done — press to open it" : finalTitle())}" class="badge badge-pass ${justDone.has(key) ? "final-pop" : ""} ${dis}">✓ Done</button></div>`;
-    }
-    if (isShipped(key)) {
-      return `<div data-final-state="shipped"><span class="text-graphite-500" title="Already shipped: no final check is needed">—</span></div>`;
-    }
-    return `<div data-final-state="waiting"><button type="button" data-final-open="${attr(key)}" ${disabled} title="${attr(finalTitle())}" class="badge badge-wait ${dis}">Final check</button></div>`;
-  }
-
-  // "Waiting for final check" in the overview: QA'd kiosks that are not shipped and not final-checked yet.
-  function renderFinalStat() {
-    const el = document.getElementById("stat-waiting");
-    if (!el) return;
-    if (finalState !== "ready") { showText(el, finalState === "loading" ? "…" : "–"); return; }
-    const kiosks = new Set(allSubmissions.map((s) => serialKey(s.serial)).filter(Boolean));
-    let waiting = 0;
-    kiosks.forEach((k) => { if (needsFinal(k)) waiting++; });
-    setCount(el, waiting);
-  }
-
-  // The server's list is the truth. (An entry from the first version of the Apps Script has no "done": it was a done one.)
-  function applyFinalList(list) {
+function applyFinalList(list) {
     const next = new Map();
     list.forEach((x) => { if (x && x.serial) next.set(serialKey(x.serial), { done: x.done !== false, at: x.at || "", by: x.by || "", note: x.note || "", noteBy: x.noteBy || "" }); });
     if (finalState === "ready") next.forEach((m, k) => { if (m.done && !isFinalDone(k)) justDone.add(k); }); // (not for what was there from the start)
     finalMap = next;
   }
 
-  // Who is doing the final check: a name from the list of people (the "People" tab of the Sheet), or any other
-  // name typed in. The name is remembered on this computer, so it does not have to be chosen every time.
-  let PEOPLE = [];
-  const FINAL_NAME_KEY = "qaFinalCheckName";
-  let finalWho = "";              // a name from PEOPLE, "__other__", or ""
-  let finalWhoOther = "";
+let PEOPLE = [];
 
-  async function loadPeople() {
+const FINAL_NAME_KEY = "qaFinalCheckName";
+
+let finalWho = "";
+
+let finalWhoOther = "";
+
+async function loadPeople() {
     try {
       const res = await fetch(`${WEBHOOK_URL}?action=listPeople`);
       const data = await res.json();
@@ -1158,40 +863,51 @@
     }
   }
 
-  function rememberedFinalName() {
+function rememberedFinalName() {
     try { return localStorage.getItem(FINAL_NAME_KEY) || ""; } catch (e) { return ""; }
   }
-  const finalByName = () => (finalWho === "__other__" ? finalWhoOther.trim() : finalWho);
 
-  let detailMode = "view";        // "view" = read only (Details); "final" = the final check: a note can be written and the check confirmed
-  let finalDraftNote = "";        // what is typed in the note box
-  let finalSaving = false;
-  let finalWarned = false;        // the person was already told about an unsaved note once
-  let finalMsg = null;            // { kind: "ok" | "error" | "warn", text } shown in the final-check window
+const finalByName = () => (finalWho === "__other__" ? finalWhoOther.trim() : finalWho);
 
-  let finalEdits = {};            // "step:index" -> "pass" | "fail": results changed in the window and not saved yet
+let detailMode = "view";
 
-  const finalNoteDirty = () => !!currentDetail && finalDraftNote.trim() !== finalNoteOf(serialKey(currentDetail.serial));
-  const finalDirty = () => finalNoteDirty() || Object.keys(finalEdits).length > 0;
-  const savedResult = (sub, k) => { const [step, idx] = k.split(":"); return (sub.checklist[step] || [])[Number(idx)]; };
-  const effectiveResult = (sub, step, idx) => (finalEdits[step + ":" + idx] !== undefined ? finalEdits[step + ":" + idx] : (sub.checklist[step] || [])[idx]);
-  const kioskNow = (key) => latestPerKiosk(allSubmissions).find((s) => serialKey(s.serial) === key);
+let finalDraftNote = "";
 
-  // The results changed in the window, as the Apps Script wants them.
-  function pendingChanges(sub) {
+let finalTestOrder = ""; // the Test Order link in the final check (a new one can be pasted after a re-test)
+
+let finalSaving = false;
+
+let finalWarned = false;
+
+let finalMsg = null;
+
+let finalEdits = {};
+
+const finalNoteDirty = () => !!currentDetail && finalDraftNote.trim() !== finalNoteOf(serialKey(currentDetail.serial));
+
+const finalTestOrderDirty = () => !!currentDetail && finalTestOrder.trim() !== String(currentDetail.testOrder || "").trim();
+
+const finalDirty = () => finalNoteDirty() || finalTestOrderDirty() || Object.keys(finalEdits).length > 0;
+
+const savedResult = (sub, k) => { const [step, idx] = k.split(":"); return (sub.checklist[step] || [])[Number(idx)]; };
+
+const effectiveResult = (sub, step, idx) => (finalEdits[step + ":" + idx] !== undefined ? finalEdits[step + ":" + idx] : (sub.checklist[step] || [])[idx]);
+
+const kioskNow = (key) => latestPerKiosk(allSubmissions).find((s) => serialKey(s.serial) === key);
+
+function pendingChanges(sub) {
     return Object.keys(finalEdits).map((k) => {
       const [step, idx] = k.split(":");
       return { step, index: Number(idx), item: SECTIONS[step].items[Number(idx)], from: savedResult(sub, k), to: finalEdits[k] };
     });
   }
 
-  async function postJson(body) {
+async function postJson(body) {
     const res = await fetch(WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
     return res.json();
   }
 
-  // A saved change comes back as the inspection's new data: swap it in and redraw everything that counts it.
-  function applyEditedSubmission(updated) {
+function applyEditedSubmission(updated) {
     const i = allSubmissions.findIndex((x) => x.row === updated.row);
     if (i < 0) return;
     updated.__order = allSubmissions[i].__order;
@@ -1199,8 +915,7 @@
     afterDataChanged();
   }
 
-  // Somebody else changed this inspection in the meantime: load everything again and show the window on the new data.
-  async function reloadAfterConflict(key) {
+async function reloadAfterConflict(key) {
     const fresh = await fetchSubmissionsQuietly();
     if (fresh) { fresh.forEach((x, i) => { x.__order = i; }); allSubmissions = fresh; afterDataChanged(); }
     finalEdits = {};
@@ -1210,14 +925,15 @@
     renderDetail();
   }
 
-  function openFinal(serial) {
+function openFinal(serial) {
     const key = serialKey(serial);
-    const sub = currentFiltered.find((s) => serialKey(s.serial) === key);
+    const sub = latestPerKiosk(allSubmissions).find((s) => serialKey(s.serial) === key);
     if (!sub || finalState !== "ready") return;
     currentDetail = sub;
     detailMode = "final";
     finalEdits = {};
     finalDraftNote = finalNoteOf(key);
+    finalTestOrder = sub.testOrder || "";
     const name = rememberedFinalName();
     if (!name) { finalWho = ""; finalWhoOther = ""; }
     else if (PEOPLE.indexOf(name) !== -1) { finalWho = name; finalWhoOther = ""; }
@@ -1231,7 +947,7 @@
     if (box) box.focus({ preventScroll: true });
   }
 
-  function renderFinalMessage() {
+function renderFinalMessage() {
     const el = document.getElementById("final-msg");
     if (!el) return;
     if (!finalMsg) { el.className = "mt-2 hidden text-sm"; el.textContent = ""; return; }
@@ -1240,20 +956,16 @@
     el.textContent = finalMsg.text;
   }
 
-  // Keeps the buttons right while typing / saving, without redrawing the window (that would lose the cursor).
-  function updateFinalButtons() {
+function updateFinalButtons() {
     const dirty = finalDirty();
     document.querySelectorAll("[data-final-act]").forEach((b) => {
       b.disabled = finalSaving || (b.dataset.finalAct === "note" && isFinalDone(serialKey(currentDetail.serial)) && !dirty);
     });
     document.querySelectorAll("[data-edit-key]").forEach((b) => { b.disabled = finalSaving; });
-    ["final-note", "final-who", "final-who-other"].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = finalSaving; });
+    ["final-note", "final-who", "final-who-other", "final-test-order"].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = finalSaving; });
   }
 
-  // kind: "confirm" (done + the note), "note" (only save), "undo" (take the final check back; the note stays)
-  // Changed results are saved FIRST (each one is logged, with its old value, in the "Edit log" tab and in a note on the
-  // cell), so nothing is ever confirmed on results that could not be saved.
-  async function saveFinal(kind) {
+async function saveFinal(kind) {
     if (finalSaving || !currentDetail) return;
     const sub = currentDetail;
     const key = serialKey(sub.serial);
@@ -1263,6 +975,14 @@
       renderFinalMessage();
       const who = document.getElementById("final-who");
       if (who) who.focus({ preventScroll: true });
+      return;
+    }
+    const newLink = kind !== "undo" && finalTestOrderDirty() ? finalTestOrder.trim() : "";
+    if (kind !== "undo" && finalTestOrderDirty() && !safeLink(newLink)) {
+      finalMsg = { kind: "error", text: "The Test Order has to be a link (https://…). Nothing was saved." };
+      renderFinalMessage();
+      const f = document.getElementById("final-test-order");
+      if (f) f.focus({ preventScroll: true });
       return;
     }
     const changes = kind === "undo" ? [] : pendingChanges(sub);
@@ -1277,6 +997,20 @@
     updateFinalButtons();
     let resultsSaved = false;
     try {
+      // a new Test Order first: the earlier link stays in the history (e.g. the one of the failed camera check)
+      if (newLink) {
+        const camIdx = SECTIONS["2"].items.indexOf(TEST_ORDER_ITEM);
+        const to = await postJson({ action: "setTestOrder", serial: key, link: newLink, by, result: effectiveResult(sub, "2", camIdx) || "", previousResult: (sub.checklist["2"] || [])[camIdx] || "" });
+        if (!to || to.ok !== true) {
+          const e = new Error(to && /Unknown POST action/i.test(to.error || "") ? "This needs the updated Apps Script: it cannot save a new Test Order yet." : "The Test Order was not saved: " + ((to && to.error) || "not accepted") + ".");
+          e.user = true;
+          throw e;
+        }
+        allSubmissions.forEach((x) => { if (serialKey(x.serial) === key) { x.testOrder = to.testOrder; x.testOrderHistory = to.history; } });
+        currentDetail.testOrder = to.testOrder; currentDetail.testOrderHistory = to.history;
+        finalTestOrder = to.testOrder;
+        resultsSaved = true;
+      }
       if (changes.length) {
         const edit = await postJson({
           action: "editSubmission", row: sub.row, editor: by, changes,
@@ -1297,7 +1031,6 @@
       try { localStorage.setItem(FINAL_NAME_KEY, by); } catch (e) { /* ignore */ }
       finalSaving = false;
       lastLiveSignature = liveSignature(); // what is on screen IS the current state
-      renderFinalStat();
       refresh();
       if (kind === "confirm") { closeDetail(); return; }
       if (kind === "note") finalDraftNote = finalNoteOf(key);
@@ -1311,172 +1044,22 @@
         finalMsg = { kind: "error", text: "The changed results were saved, but the final check could not be saved. Check the connection and press the button again." };
         renderDetail(); // shows the results as they are saved now
       } else {
-        finalMsg = { kind: "error", text: "Couldn't save, so nothing was changed. Check the connection and try again. What you wrote is still here." };
+        finalMsg = { kind: "error", text: err && err.user ? err.message + " Nothing else was changed." : "Couldn't save, so nothing was changed. Check the connection and try again. What you wrote is still here." };
         renderFinalMessage();
         updateFinalButtons();
       }
     }
   }
 
-  async function loadDrafts() {
-    try {
-      const res = await fetch(`${WEBHOOK_URL}?action=listDrafts`);
-      const data = await res.json();
-      if (data && data.ok && Array.isArray(data.drafts)) return data.drafts;
-    } catch (err) {
-      console.error("Could not load drafts:", err);
-    }
-    return null; // null = "could not tell" (an empty list is a real answer: nothing in progress)
-  }
-
-  // Re-reads what changes during the day in ONE request: the unfinished inspections and the
-  // shipped kiosks. An Apps Script from before shipping existed does not know this request;
-  // then only the drafts are read and the shipping marks are switched off (not broken).
-  // Returns null when the server could not be reached at all.
-  async function loadLive() {
-    try {
-      const res = await fetch(`${WEBHOOK_URL}?action=listLive`);
-      const data = await res.json();
-      if (data && data.ok && Array.isArray(data.drafts) && Array.isArray(data.shipped)) {
-        return { drafts: data.drafts, shipped: data.shipped, finalChecks: Array.isArray(data.finalChecks) ? data.finalChecks : null, qa1: Array.isArray(data.qa1) ? data.qa1 : null, supported: true };
-      }
-    } catch (err) {
-      console.error("Could not load the live data:", err);
-      return null;
-    }
-    const drafts = await loadDrafts(); // the server answered but does not know 'listLive'
-    return drafts === null ? null : { drafts, shipped: [], finalChecks: null, qa1: null, supported: false };
-  }
-
-  // True when this kiosk is already in the list for the same technician and date — so the
-  // draft is most likely the leftover of a QA that was finished. Only a hint: nothing is
-  // ever hidden or deleted because of it.
-  function looksAlreadySubmitted(draft, serial) {
-    if (!serial || !draft.dateValue) return false;
-    return allSubmissions.some((s) => s.serial === serial && s.technician === (draft.technician || "") && s.inspectionDate === draft.dateValue);
-  }
-
-  let lastLiveSignature = "";
-
-  // A fingerprint of what the screen shows from the live data (unfinished QAs + shipped marks).
-  function liveSignature() {
-    return JSON.stringify([
-      lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.dateValue, d.serialValues, d.paused === true, draftState(d), d.elapsedSec || 0]),
-      Array.from(shippedMap.entries()), shipState,
-      Array.from(finalMap.entries()), finalState,
-      lastQa1.map((q) => [q.serial, q.submittedAt, q.fail, q.technician]), qa1State,
-      lastDrafts.map((d) => [d.id, d.mode]),
-    ]);
-  }
-
-  async function refreshLive() {
-    const live = await loadLive();
-    if (live === null) {
-      // couldn't reach the server: keep what is on screen (but say so if shipping never loaded)
-      if (shipState === "loading" || finalState === "loading") {
-        if (shipState === "loading") shipState = "error";
-        if (finalState === "loading") finalState = "error";
-        if (dataLoaded) { renderShippedStat(); refresh(); }
-      }
-      return;
-    }
-    lastDrafts = live.drafts
-      .filter((d) => (d.serialValues || []).some((v) => v))
-      .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-    if (live.supported) { applyShippedList(live.shipped); shipState = "ready"; } else { shipState = "unsupported"; }
-    if (live.supported && live.finalChecks) { applyFinalList(live.finalChecks); finalState = "ready"; } else { finalState = "unsupported"; }
-    if (live.supported && live.qa1) { lastQa1 = live.qa1.slice().sort((a, b) => String(a.submittedAt).localeCompare(String(b.submittedAt))); qa1State = "ready"; } else { qa1State = "unsupported"; }
-
-    // Redraw only when something changed: a redraw every half minute could swallow a click.
-    const signature = liveSignature();
-    if (signature === lastLiveSignature && dataLoaded) return;
-    lastLiveSignature = signature;
-    if (dataLoaded) { renderShippedStat(); refresh(); }
-  }
-
-  // Where an unfinished inspection belongs:
-  //   "unfinished" = put aside on purpose (Pause / Home in the QA form), or left behind (nothing saved for a while):
-  //                  it can be resumed;
-  //   "progress"   = being worked on right now (the form saves it again every couple of minutes).
-  function draftState(draft) {
+function draftState(draft) {
     if (draft.paused) return "unfinished";
     const t = Date.parse(draft.savedAt);
     return isFinite(t) && Date.now() - t < ACTIVE_FRESH_MS ? "progress" : "unfinished";
   }
 
-  // one entry per kiosk of every unfinished inspection, filtered like the finished ones
-  function buildDraftRows(f) {
-    const rows = [];
-    lastDrafts.forEach((draft) => {
-      const serials = (draft.serialValues || []).filter(Boolean);
-      const state = draftState(draft);
-      serials.forEach((serial) => rows.push({ draft, serial, total: serials.length, state }));
-    });
-    return rows.filter(({ draft, serial }) => {
-      const date = draft.dateValue || "";
-      if (f.technician && draft.technician !== f.technician) return false;
-      if (f.serial && !serial.toUpperCase().includes(f.serial)) return false;
-      if (f.from && date < f.from) return false;
-      if (f.to && date > f.to) return false;
-      if (f.onlyFails) return false; // nothing has been decided yet
-      return true;
-    });
-  }
+const attr = (v) => String(v).replace(/"/g, "&quot;");
 
-  function savedText(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    return d.toDateString() === new Date().toDateString()
-      ? `saved ${time}`
-      : `saved ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
-  }
-
-  const attr = (v) => String(v).replace(/"/g, "&quot;");
-
-  // One row per kiosk. "Unfinished" rows have ONE Resume button per inspection, in a cell merged over all its
-  // kiosk rows (`first` marks the first row of an inspection, `span` how many of its rows are on screen).
-  // "In progress" rows can only be looked at: no buttons.
-  function draftRowHtml({ draft, serial, total, first, span }, kind) {
-    const id = attr(draft.id);
-    const kiosksNote = total > 1 ? ` (${total} kiosks)` : "";
-    const togetherNote = total > 1 ? ` · ${total} kiosks together` : "";
-    const saved = savedText(draft.savedAt);
-    let status;
-    if (kind === "progress") {
-      status = `<span class="inline-flex items-center gap-2 text-graphite-200"><span class="progress-dot" aria-hidden="true"></span>Currently in progress</span>
-          <span class="ml-2 text-graphite-500">last ${escapeHtml(saved)}${togetherNote}</span>`;
-    } else {
-      const label = draft.paused ? "Paused" : "Left unfinished";
-      const hint = looksAlreadySubmitted(draft, serial)
-        ? `<span class="mt-1 block text-xs text-graphite-400">Already in the finished list for this technician and date. If it is done, press Resume and use Discard inspection.</span>`
-        : "";
-      status = `<span class="inline-flex items-center gap-2 text-graphite-200"><svg class="h-3.5 w-3.5 text-graphite-400" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>${label}</span>
-          <span class="ml-2 text-graphite-500">${escapeHtml(saved)}${togetherNote}</span>${hint}`;
-    }
-    const time = draft.elapsedSec > 0 ? durationHtml({ durationSec: draft.elapsedSec, sessionKiosks: 1 }) : "";
-    let actions = "";
-    if (kind === "unfinished" && first) {
-      actions = `
-        <td rowspan="${span}" class="progress-actions whitespace-nowrap">
-          <a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}${draft.mode === "qa1" || draft.mode === "qa2" ? "&mode=" + draft.mode : ""}" aria-label="Resume this inspection${kiosksNote}" class="rounded-md bg-leaf-500 px-3 py-1.5 text-xs font-semibold text-graphite-950 transition hover:bg-leaf-600">Resume</a>
-        </td>`;
-    }
-    return `
-      <tr class="draft-row ${kind === "unfinished" ? "is-unfinished" : "is-progress"}" data-draft="${id}">
-        <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(draft.dateValue || "")}</td>
-        <td>${escapeHtml(draft.technician || "")}</td>
-        <td class="font-mono text-graphite-400">${escapeHtml(serial)}${draft.mode === "qa1" || draft.mode === "qa2" ? ` <span class="badge badge-wait ml-1" style="padding:0 6px;font-size:11px">${draft.mode === "qa1" ? "QA1" : "QA2"}</span>` : ""}</td>
-        <td>${status}</td>
-        <td class="whitespace-nowrap">${time || '<span class="text-graphite-500">—</span>'}</td>${actions}
-      </tr>`;
-  }
-
-  // Kiosks inspected together are submitted in one go, so they sit on
-  // neighbouring sheet rows with the same technician, date and QA time. Count
-  // such runs, so the table can say "(3 kiosks)" instead of implying that each
-  // kiosk took that long. (Rows without a QA time are never grouped.)
-  function markSessions(list) {
+function markSessions(list) {
     list.forEach((s) => { s.sessionKiosks = 1; s.__sessionStart = undefined; });
     const byRow = list.filter((s) => typeof s.row === "number").slice().sort((a, b) => a.row - b.row);
     let i = 0;
@@ -1500,8 +1083,7 @@
     }
   }
 
-  // 754 -> "12:34", 3725 -> "1:02:05"
-  function formatDuration(totalSec) {
+function formatDuration(totalSec) {
     const sec = Math.max(0, Math.round(totalSec));
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
@@ -1509,10 +1091,7 @@
     return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
   }
 
-  // The QA time next to the date. It belongs to the whole QA session, so when
-  // several kiosks were inspected together it says so instead of implying
-  // that each one took that long. Older inspections have no time recorded.
-  function durationHtml(s) {
+function durationHtml(s) {
     if (s.durationSec === null || s.durationSec === undefined) return "";
     const together = s.sessionKiosks > 1;
     const sec = Math.round(s.durationSec);
@@ -1523,9 +1102,7 @@
     </span>`;
   }
 
-  // Under the technician: who did the very first QA and how many QAs this kiosk has had.
-  // The QA1 of a kiosk in the finished list: how it went, and how long it took (a dash for a full QA, the old way).
-  function qa1CellHtml(s) {
+function qa1CellHtml(s) {
     const q = s.qa1;
     if (!q) return '<span class="text-graphite-500" title="A full QA: all checks in one go">—</span>';
     const failed = q.fail > 0;
@@ -1535,176 +1112,25 @@
     return badge + durationHtml({ durationSec: q.durationSec, sessionKiosks: q.batchSize });
   }
 
-  function renderTable(filtered) {
-    const tbody = document.getElementById("table-body");
-    const doneHtml = filtered
-      .map((s, i) => {
-        const { pass, fail } = countResults(s);
-        return `
-          <tr${(() => { const c = [justFinished.has((s.serial || "").toUpperCase()) ? "just-finished" : "", justDone.has(serialKey(s.serial)) ? "final-flash" : ""].filter(Boolean).join(" "); return c ? ` class="${c}"` : ""; })()}>
-            <td>${shipBoxHtml(s.serial)}</td>
-            <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(s.inspectionDate)}${durationHtml(s)}</td>
-            <td>${escapeHtml(s.technician)}</td>
-            <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(s.serial)}${s.edits && s.edits.length ? ' <span class="ml-1 rounded-full bg-graphite-700 px-1.5 py-0.5 font-sans text-[12px] text-graphite-300" title="Edited after submission">edited</span>' : ""}</td>
-            <td class="whitespace-nowrap">${qa1CellHtml(s)}</td>
-            <td><span class="badge badge-pass">${pass}</span></td>
-            <td><span class="badge ${fail > 0 ? "badge-fail" : "badge-pass"}">${fail}</span></td>
-            <td>${finalCellHtml(s.serial)}</td>
-            <td class="whitespace-nowrap">
-              <button type="button" data-detail-idx="${i}" class="rounded-md border border-graphite-600 px-2 py-1 text-xs text-graphite-300 hover:border-leaf-500 hover:text-leaf-500">Details</button>
-            </td>
-          </tr>
-        `;
-      })
-      .join("");
-    const focusedShip = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.shipSerial : null;
-    tbody.innerHTML = doneHtml;
-    justDone.clear(); // the pop plays once: later redraws do not repeat it
-    if (focusedShip) focusShipBox(focusedShip); // a redraw must not drop the keyboard focus
-  }
+let currentDetail = null;
+let detailTab = "details"; // the Details window: "details" | "comments"
 
-  function renderDrafts(rows, kind) {
-    document.getElementById("drafts-body").innerHTML = rows
-      .map((r, i) => {
-        const first = i === 0 || rows[i - 1].draft.id !== r.draft.id;
-        let span = 0;
-        if (first) while (rows[i + span] && rows[i + span].draft.id === r.draft.id) span++;
-        return draftRowHtml({ ...r, first, span }, kind);
-      })
-      .join("");
-    document.getElementById("drafts-actions-th").classList.toggle("hidden", kind !== "unfinished");
-  }
+const resultWord = (v) => (v === "pass" ? "Pass" : v === "fail" ? "Fail" : "—");
 
-  // ---------- QA1 / QA2: the list of kiosks that wait for their QA2 ----------
-  function waitingAgeText(iso) {
-    const t = Date.parse(iso);
-    if (!isFinite(t)) return { text: "–", stale: false };
-    const min = Math.max(0, Math.round((Date.now() - t) / 60000));
-    if (min < 60) return { text: `${min} min`, stale: false };
-    if (min < 48 * 60) return { text: `${Math.round(min / 60)} h`, stale: false };
-    return { text: `${Math.round(min / 1440)} days`, stale: true }; // two days or more: it is getting forgotten
-  }
-
-  // the QA2 of this kiosk, if somebody has started it (so a second one is not started by mistake)
-  function qa2DraftFor(serial) {
-    return lastDrafts.find((d) => d.mode === "qa2" && (d.serialValues || []).some((v) => String(v || "").toUpperCase() === serial)) || null;
-  }
-
-  function waitingRowHtml(q) {
-    const age = waitingAgeText(q.submittedAt);
-    const failed = q.fail > 0;
-    const result = failed
-      ? `<span class="badge badge-fail" title="${linkAttr((q.failed || []).join(", "))}">✕ ${q.fail} fail</span>`
-      : `<span class="badge badge-pass">✓ ${q.pass} / ${q.pass + q.fail}</span>`;
-    const draft = qa2DraftFor(q.serial);
-    let action;
-    if (draft && draftState(draft) === "progress") {
-      action = `<span class="badge badge-wait" title="Somebody is working on it right now">QA2 in progress</span>`;
-    } else if (draft) {
-      action = `<a href="qa-app.html?draftId=${encodeURIComponent(draft.id)}&mode=qa2" class="badge badge-pass" style="padding:6px 14px">Resume QA2 ›</a>`;
-    } else {
-      action = `<a href="qa-app.html?mode=qa2&serial=${encodeURIComponent(q.serial)}&start=1" class="badge badge-pass" style="padding:6px 14px" aria-label="Start the QA2 of ${attr(q.serial)}">Start QA2 ›</a>`;
-    }
-    return `
-      <tr data-waiting="${attr(q.serial)}">
-        <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(q.serial)}</td>
-        <td>${escapeHtml(q.technician)}</td>
-        <td class="whitespace-nowrap font-mono text-graphite-300">${escapeHtml(q.inspectionDate)}${durationHtml({ durationSec: q.durationSec, sessionKiosks: q.batchSize })}</td>
-        <td class="text-graphite-400">${q.batchSize} kiosk${q.batchSize === 1 ? "" : "s"}</td>
-        <td>${result}</td>
-        <td><span class="badge ${age.stale ? "badge-fail" : "badge-wait"}">${age.text}</span></td>
-        <td class="whitespace-nowrap text-right">${action}</td>
-      </tr>`;
-  }
-
-  function renderWaiting() {
-    document.getElementById("waiting-body").innerHTML = lastQa1.map(waitingRowHtml).join("");
-  }
-
-  function renderQa2Stat() {
-    const el = document.getElementById("stat-qa2");
-    if (!el) return;
-    if (qa1State !== "ready") { showText(el, qa1State === "loading" ? "…" : "–"); return; }
-    setCount(el, lastQa1.length);
-  }
-
-  const EMPTY_TEXT = {
-    waiting: "No kiosk is waiting for QA2. A kiosk appears here as soon as its QA1 is submitted.",
-    finished: "No inspections match the current filters.",
-    unfinished: "No unfinished inspections. A QA that is stopped with Pause (or Home) waits here to be resumed.",
-    progress: "Nothing is in progress right now.",
-  };
-  const VIEW_TITLE = { waiting: "Waiting for QA2", finished: "Finished inspections", unfinished: "Unfinished inspections", progress: "In progress inspections" };
-
-  // Shows the list that is open, with its counts.
-  function renderView() {
-    document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
-    document.getElementById("table-title").textContent = VIEW_TITLE[view];
-    document.getElementById("filter-final").disabled = finalState !== "ready"; // (it needs the final-check marks to be loaded)
-    document.getElementById("count-unfinished").textContent = currentUnfinished.length;
-    document.getElementById("count-progress").textContent = currentProgress.length;
-    document.getElementById("count-waiting").textContent = qa1State === "ready" ? lastQa1.length : "–";
-    renderQa2Stat();
-
-    const shown = currentFiltered.slice(0, visibleLimit);
-    let count;
-    if (view === "waiting") {
-      renderWaiting();
-      count = `${lastQa1.length} kiosk${lastQa1.length === 1 ? "" : "s"}`;
-    } else if (view === "finished") {
-      renderTable(shown);
-      const totalKiosks = groupBySerial(allSubmissions).length;
-      count = `Showing ${shown.length} of ${currentFiltered.length} kiosk${currentFiltered.length === 1 ? "" : "s"}` +
-        (currentFiltered.length < totalKiosks ? ` · ${totalKiosks} in total` : ""); // (when a filter hides some)
-    } else {
-      const rows = view === "unfinished" ? currentUnfinished : currentProgress;
-      renderDrafts(rows, view);
-      count = `${rows.length} kiosk${rows.length === 1 ? "" : "s"}`;
-    }
-    const rowsInView = view === "waiting" ? lastQa1.length : view === "finished" ? shown.length : (view === "unfinished" ? currentUnfinished : currentProgress).length;
-    document.getElementById("filter-count").textContent = count;
-    document.getElementById("table-card").classList.toggle("hidden", !(view === "finished" && rowsInView > 0));
-    document.getElementById("drafts-card").classList.toggle("hidden", !((view === "unfinished" || view === "progress") && rowsInView > 0));
-    document.getElementById("waiting-card").classList.toggle("hidden", !(view === "waiting" && rowsInView > 0));
-    document.getElementById("empty-state").textContent = EMPTY_TEXT[view];
-    document.getElementById("empty-state").classList.toggle("hidden", rowsInView > 0);
-
-    const more = view === "finished" && currentFiltered.length > shown.length;
-    document.getElementById("load-more-wrap").classList.toggle("hidden", !more);
-    if (more) {
-      const next = Math.min(PAGE_SIZE, currentFiltered.length - shown.length);
-      document.getElementById("load-more-info").textContent = `Showing ${shown.length} of ${currentFiltered.length} kiosks · loads ${next} more`;
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // DETAILS WINDOW — every result of a kiosk's QA. Each serial number is QA'd once, so there is normally
-  // one QA per kiosk; for older data where a kiosk was QA'd more than once, the history of those QAs is
-  // shown too (who, when, and what changed). Results are not edited here.
-  // ---------------------------------------------------------------------
-  let currentDetail = null;
-
-  const resultWord = (v) => (v === "pass" ? "Pass" : v === "fail" ? "Fail" : "—");
-  const resultBadge = (v) =>
+const resultBadge = (v) =>
     v === "pass" ? '<span class="badge badge-pass">Pass</span>' :
     v === "fail" ? '<span class="badge badge-fail">Fail</span>' :
     '<span class="text-xs text-graphite-500">—</span>';
 
-  function formatWhen(iso) {
+function formatWhen(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso || "";
     return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
-  function countFails(sub) {
-    return SECTION_KEYS.reduce((n, step) => n + (sub.checklist[step] || []).filter((v) => v === "fail").length, 0);
-  }
+let modalCloseTimer = null;
 
-  // Opening a window locks the page behind it (without the page jumping sideways when its scrollbar goes away);
-  // the mouse wheel over the dark area around the window scrolls the window, so it works wherever the mouse is.
-  let modalCloseTimer = null;
-
-  function showDetailModal() {
+function showDetailModal() {
     const root = document.documentElement;
     const modal = document.getElementById("detail-modal");
     const bar = root.clientWidth > 0 ? window.innerWidth - root.clientWidth : 0;
@@ -1715,8 +1141,7 @@
     modal.classList.add("open");
   }
 
-  // The window is closed at once (the page is unlocked); a short fade-out plays while "closing" is set.
-  function hideDetailModal() {
+function hideDetailModal() {
     const modal = document.getElementById("detail-modal");
     const wasOpen = modal.classList.contains("open");
     modal.classList.remove("open");
@@ -1729,42 +1154,83 @@
     }
   }
 
-  document.getElementById("detail-modal").addEventListener("wheel", (e) => {
+document.getElementById("detail-modal").addEventListener("wheel", (e) => {
     const panel = document.getElementById("detail-modal").firstElementChild;
     if (panel.contains(e.target)) return; // over the window itself: it scrolls by itself
     e.preventDefault();                   // over the dark area: scroll the window, never the page
     panel.scrollTop += e.deltaY;
   }, { passive: false });
 
-  function openDetail(sub) {
+function openDetail(sub) {
     currentDetail = sub;
     detailMode = "view";
+    detailTab = "details";
     finalEdits = {};
     finalMsg = null;
     renderDetail();
     showDetailModal();
   }
 
-  function closeDetail() {
+// The results of a QA1 on their own (the "Results" button of QA1 on the desk). The QA1 also stays in the QA2 results.
+function qa1ResultsHtml(q, sub) {
+    const inQa1 = (l) => /^Round [12] - /.test(l) || l === QA1_EXTRA_ITEM;
+    const failedSet = new Set(q.failed || []);
+    const rows = (SECTIONS["2"] ? SECTIONS["2"].items : []).map((label, idx) => ({ label, idx })).filter((x) => inQa1(x.label)).map((x) => {
+      const val = sub && sub.checklist ? (sub.checklist["2"] || [])[x.idx] : failedSet.has(x.label) ? "fail" : "pass";
+      return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(x.label)}</span>${resultBadge(val)}</div>`;
+    }).join("");
+    return rows ? `<div><p class="${LABEL_CLS}">Checks of the QA1</p>${rows}</div>` : "";
+  }
+function openQa1Detail(q, serial, sub) {
+    if (!q) return;
+    currentDetail = null; // (not a QA2 row: the QA2 view and the final check stay out of it)
+    detailMode = "view";
+    finalEdits = {};
+    finalMsg = null;
+    document.getElementById("detail-serial").textContent = serial;
+    document.getElementById("detail-meta").textContent = `${q.inspectionDate || ""} · ${q.technician || "—"} · QA1`;
+    const tabsEl = document.getElementById("detail-tabs");
+    tabsEl.innerHTML = "";
+    tabsEl.classList.add("hidden");
+    const body = document.getElementById("detail-body");
+    body.removeAttribute("aria-labelledby");
+    body.innerHTML = `<div><p class="${LABEL_CLS}">Comment from the QA1</p>${q.comment
+        ? `<p class="whitespace-pre-wrap break-words text-sm text-graphite-100">${escapeHtml(q.comment)}</p>`
+        : `<p class="text-sm text-graphite-500">No comment was written.</p>`}</div>`
+      + qa1BlockHtml(q) + qa1ResultsHtml(q, sub);
+    showDetailModal();
+  }
+
+function closeDetail() {
     hideDetailModal();
     detailMode = "view";
     finalEdits = {};
     finalMsg = null;
   }
 
-  function renderDetail() {
+function renderDetail() {
     const sub = currentDetail;
     if (!sub) return;
     document.getElementById("detail-serial").textContent = sub.serial || "(no serial)";
     document.getElementById("detail-meta").textContent = `${sub.inspectionDate} · ${sub.technician || "—"}` + (detailMode === "final" ? " · Final check" : "");
-    document.getElementById("detail-tabs").classList.add("hidden"); // one view only: no tabs
-    document.getElementById("detail-body").innerHTML = renderDetailsBody(sub);
+    // two tabs while looking (Details | Comments); the final check is one view
+    const tabsEl = document.getElementById("detail-tabs");
+    const showTabs = detailMode === "view";
+    if (!showTabs) detailTab = "details";
+    tabsEl.classList.toggle("hidden", !showTabs);
+    const nComments = showTabs ? kioskComments(sub).length : 0;
+    tabsEl.setAttribute("role", "tablist");
+    tabsEl.innerHTML = showTabs
+      ? `<button type="button" class="dtab" role="tab" id="dtab-details" data-dtab="details" aria-selected="${detailTab === "details"}" aria-controls="detail-body">Details</button>`
+        + `<button type="button" class="dtab" role="tab" id="dtab-comments" data-dtab="comments" aria-selected="${detailTab === "comments"}" aria-controls="detail-body">Comments<span class="tab-count">${nComments}</span></button>`
+      : "";
+    document.getElementById("detail-body").setAttribute("aria-labelledby", detailTab === "comments" ? "dtab-comments" : "dtab-details");
+    document.getElementById("detail-body").innerHTML = detailTab === "comments" ? commentsTabHtml(sub) : renderDetailsBody(sub);
     renderFinalMessage();
     updateFinalButtons();
   }
 
-  // The window's results as they would be if the changes were saved: what is shown as failed, and what is just changed.
-  function failedNow(sub) {
+function failedNow(sub) {
     const out = [];
     SECTION_KEYS.forEach((step) => SECTIONS[step].items.forEach((label, idx) => {
       if (effectiveResult(sub, step, idx) === "fail") out.push({ label, changed: finalEdits[step + ":" + idx] !== undefined });
@@ -1772,14 +1238,13 @@
     return out;
   }
 
-  function failedBlockHtml(sub) {
+function failedBlockHtml(sub) {
     const list = failedNow(sub);
     if (!list.length) return "";
     return `<p class="${LABEL_CLS}">Failed checks</p>` + list.map((f) => `<p class="text-sm text-graphite-200">${resultBadge("fail")} ${escapeHtml(f.label)}${f.changed ? ' <span class="text-xs text-graphite-500">(changed, not saved yet)</span>' : ""}</p>`).join("");
   }
 
-  // One result with Pass / Fail switches (only for checks that have a result; an unanswered one cannot be changed).
-  function editRowHtml(sub, step, idx, label) {
+function editRowHtml(sub, step, idx, label) {
     const k = step + ":" + idx;
     const saved = (sub.checklist[step] || [])[idx];
     if (saved !== "pass" && saved !== "fail") return `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(saved)}</div>`;
@@ -1791,8 +1256,7 @@
     </div>`;
   }
 
-  // A switch was pressed: the row is changed IN PLACE (so the highlight slides over), then the failed list and the buttons follow.
-  function setFinalEdit(k, val) {
+function setFinalEdit(k, val) {
     if (finalSaving || !currentDetail) return;
     const saved = savedResult(currentDetail, k);
     if (val === saved) delete finalEdits[k]; else finalEdits[k] = val;
@@ -1808,7 +1272,7 @@
     updateFinalButtons();
   }
 
-  function paintFinalSummary() {
+function paintFinalSummary() {
     const failed = document.getElementById("final-failed");
     if (failed && currentDetail) failed.innerHTML = failedBlockHtml(currentDetail);
     const pending = document.getElementById("final-pending");
@@ -1819,16 +1283,15 @@
     }
   }
 
-  function failedLabels(sub) {
+function failedLabels(sub) {
     const out = [];
     SECTION_KEYS.forEach((step) => SECTIONS[step].items.forEach((label, idx) => { if ((sub.checklist[step] || [])[idx] === "fail") out.push(label); }));
     return out;
   }
 
-  const LABEL_CLS = "mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500";
+const LABEL_CLS = "mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500";
 
-  // Read-only: is the final check done (when, by whom), and the note (what was fixed, by whom).
-  function finalReadHtml(key, failedCount) {
+function finalReadHtml(key, failedCount) {
     const m = finalMap.get(key);
     const done = isFinalDone(key);
     const note = finalNoteOf(key);
@@ -1836,15 +1299,11 @@
     if (done) html += `<p class="text-sm"><span class="badge badge-pass">✓ Done</span> <span class="text-xs text-graphite-400">${escapeHtml(finalWhenBy(m))}</span></p>`;
     else if (isShipped(key)) html += `<p class="text-sm text-graphite-400">Already shipped: no final check was needed.</p>`;
     else html += `<p class="text-sm text-graphite-300">Waiting for the final check.</p>`;
-    if (note) {
-      html += `<p class="${LABEL_CLS} mt-2">Final check note</p><p class="whitespace-pre-wrap break-words text-sm text-graphite-100">${escapeHtml(note)}</p>`;
-      if (m && m.noteBy) html += `<p class="text-xs text-graphite-500">— ${escapeHtml(m.noteBy)}</p>`;
-    } else if (done && failedCount) html += `<p class="mt-1 text-sm text-graphite-500">No note was written.</p>`;
+    // (the final check note is on the Comments tab, with every other comment)
     return html + "</div>";
   }
 
-  // The final-check window's form: who you are, the note box and the buttons.
-  function finalFormHtml(key) {
+function finalFormHtml(key) {
     const m = finalMap.get(key);
     const done = isFinalDone(key);
     const btn = "rounded-md px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
@@ -1876,22 +1335,39 @@
     </div>`;
   }
 
-  // ---------- Test Order: the link to the page where the camera was looked at ----------
-  // Shown (faint) under the camera check in Details and in the final check window. Only http(s) links can be clicked;
-  // anything else that was typed is shown as plain text, so nothing a person types can run as a link.
-  const TEST_ORDER_ITEM = "Camera quality & correct FOV";
-  // (What is shown instead of the long link is the kiosk's own serial number; the whole link is in its tooltip.)
+const TEST_ORDER_ITEM = "Camera quality & correct FOV";
 
-  function safeLink(value) {
+function safeLink(value) {
     try {
       const u = new URL(String(value || "").trim());
       return u.protocol === "http:" || u.protocol === "https:" ? u.href : "";
     } catch (e) { return ""; }
   }
 
-  const linkAttr = (v) => escapeHtml(v).replace(/"/g, "&quot;"); // for an attribute: & < > and quotes are all made harmless
+const linkAttr = (v) => escapeHtml(v).replace(/"/g, "&quot;");
 
-  function testOrderHtml(value, serial) {
+// the earlier links of a kiosk (e.g. the one of a failed camera check that was re-tested in the final check)
+function testOrderHistoryHtml(history, current) {
+    const earlier = (history || []).filter((h) => h && h.link && h.link !== String(current || "").trim());
+    if (!earlier.length) return "";
+    return earlier.map((h) => {
+      const href = safeLink(h.link);
+      const res = h.result === "fail" ? '<span class="badge badge-fail">Fail</span>' : h.result === "pass" ? '<span class="badge badge-pass">Pass</span>' : "";
+      const meta = [h.source, h.by, h.at ? formatWhen(h.at) : ""].filter(Boolean).join(" · ");
+      const link = href ? `<a href="${linkAttr(href)}" target="_blank" rel="noopener noreferrer" title="${linkAttr(href)}" class="underline decoration-graphite-600 underline-offset-2 hover:text-leaf-500">earlier link</a>` : `<span class="break-all">${escapeHtml(h.link)}</span>`;
+      return `<div data-test-order-earlier class="flex items-center justify-between gap-3 py-0.5 pl-3 text-xs text-graphite-500"><span class="italic">${link} ${res}</span><span class="min-w-0 text-right">${escapeHtml(meta)}</span></div>`;
+    }).join("");
+  }
+
+// in the final check: the current link and a field for a new one (the earlier one is kept)
+function testOrderEditHtml(sub) {
+    const field = "w-full rounded-md border border-graphite-600 bg-graphite-900 px-2 py-1 text-xs text-graphite-100 placeholder:text-graphite-500 focus:border-leaf-500 focus:outline-none disabled:opacity-60";
+    return `${testOrderHtml(sub.testOrder, sub.serial)}${testOrderHistoryHtml(sub.testOrderHistory, sub.testOrder)}
+      <div class="py-1 pl-3"><label for="final-test-order" class="block text-xs text-graphite-400">New Test Order link <span class="text-graphite-500">(e.g. after a re-test; the earlier link is kept)</span></label>
+      <input id="final-test-order" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…" value="${linkAttr(finalTestOrder)}" class="mt-1 ${field}" /></div>`;
+  }
+
+function testOrderHtml(value, serial) {
     const raw = String(value || "").trim();
     let body = `<span class="text-graphite-600">—</span>`;
     if (raw) {
@@ -1903,12 +1379,54 @@
     return `<div data-test-order class="flex items-center justify-between gap-3 py-0.5 pl-3 text-xs text-graphite-500"><span class="italic">Test Order</span><span class="min-w-0 text-right text-graphite-400">${body}</span></div>`;
   }
 
-  // ---------- a QA done in two parts: the QA1 (who, when, how long, how many kiosks together, how it went) ----------
-  function qaPartLabelHtml(text) {
+const QA1_EXTRA_ITEM = "Connector board power button test";
+
+function qaPartLabelHtml(text) {
     return `<p data-qa-part class="mb-0.5 mt-2 text-[11px] font-semibold uppercase tracking-wider text-leaf-500">${escapeHtml(text)}</p>`;
   }
 
-  function qa1BlockHtml(q) {
+// Every comment of this kiosk, in the order they were written: for each QA of it the QA1 comment and the QA2
+// comment (or the comment of a full QA), then the note of the final check. [{ part, cls, who, when, text, current }]
+function kioskComments(sub) {
+    const key = serialKey(sub.serial);
+    const runs = allSubmissions.filter((r) => serialKey(r.serial) === key).sort((a, b) => (a.row || 0) - (b.row || 0));
+    if (!runs.length) runs.push(sub);
+    const out = [];
+    // the kiosk note, first
+    const kn = noteOf(deskBySerial().get(key));
+    if (kn.note) out.push({ part: "Kiosk note", cls: "note", who: kn.by + (kn.local ? " · this computer only" : ""), when: kn.at ? formatWhen(kn.at) : "", text: kn.note, current: true });
+    const many = runs.length > 1;
+    runs.forEach((r, i) => {
+      const current = r === sub || (r.row && r.row === sub.row);
+      const run = many ? ` · QA ${i + 1} of ${runs.length}` : "";
+      const parts = r.commentParts;
+      if (r.qa1 && parts) {
+        if (parts.qa1) out.push({ part: "QA1", cls: "qa1", who: r.qa1.technician, when: r.qa1.inspectionDate + run, text: parts.qa1, current });
+        if (parts.qa2) out.push({ part: "QA2", cls: "", who: r.technician, when: r.inspectionDate + run, text: parts.qa2, current });
+      } else {
+        // a QA1 comment that is no longer in the row's comment (it was edited by hand) is still shown by itself
+        if (r.qa1 && r.qa1.comment && !String(r.comment || "").includes(r.qa1.comment)) out.push({ part: "QA1", cls: "qa1", who: r.qa1.technician, when: r.qa1.inspectionDate + run, text: r.qa1.comment, current });
+        if (String(r.comment || "").trim()) out.push({ part: r.qa1 ? "QA2" : "Full QA", cls: "", who: r.technician, when: r.inspectionDate + run, text: r.comment, current });
+      }
+    });
+    // a newer QA1 of this kiosk that is still waiting for its QA2
+    (typeof lastQa1 !== "undefined" ? lastQa1 : []).filter((q) => serialKey(q.serial) === key && q.comment).forEach((q) => out.push({ part: "QA1", cls: "qa1", who: q.technician, when: q.inspectionDate + " · QA2 not done yet", text: q.comment, current: false }));
+    const note = finalNoteOf(key);
+    if (note) { const m = finalMap.get(key); out.push({ part: "Final check", cls: "final", who: (m && m.noteBy) || "", when: m && m.at ? formatWhen(m.at) : "", text: note, current: true }); }
+    return out;
+  }
+
+function commentsTabHtml(sub) {
+    const list = kioskComments(sub);
+    if (!list.length) return `<p class="text-sm text-graphite-500" data-comments-empty>No comments for this kiosk yet: no kiosk note, no QA1 or QA2 comment and no final check note.</p>`;
+    return `<div class="space-y-2" data-comments>${list.map((c) => `
+      <div class="cmt${c.current ? " is-current" : ""}" data-comment-part="${attr(c.part)}">
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-graphite-400"><span class="cmt-part ${c.cls}">${escapeHtml(c.part)}</span><span>${escapeHtml([c.who, c.when].filter(Boolean).join(" · "))}</span></p>
+        <p class="mt-1.5 whitespace-pre-wrap break-words text-sm text-graphite-100">${escapeHtml(c.text)}</p>
+      </div>`).join("")}</div>`;
+  }
+
+function qa1BlockHtml(q) {
     if (!q) return ""; // a full QA (all checks in one go): there is no QA1 to show
     const failed = q.fail > 0;
     const together = q.batchSize > 1 ? ` · together with ${q.batchSize - 1} other kiosk${q.batchSize > 2 ? "s" : ""}` : "";
@@ -1917,15 +1435,16 @@
       ? `<span class="badge badge-fail">✕ ${q.fail} failed</span>`
       : `<span class="badge badge-pass">✓ ${q.pass} / ${q.pass + q.fail}</span>`;
     const names = failed ? `<p class="mt-1 text-xs text-graphite-400">${(q.failed || []).map((l) => escapeHtml(l)).join(", ")}</p>` : "";
-    return `<div data-qa1><p class="${LABEL_CLS}">QA1 · Restart rounds</p>
+    return `<div data-qa1><p class="${LABEL_CLS}">QA1 · Restarts and power button test</p>
       <p class="flex flex-wrap items-center gap-2 text-sm text-graphite-100">${result}<span>${escapeHtml(q.technician)} · ${escapeHtml(q.inspectionDate)}${mins}${together}</span></p>${names}</div>`;
   }
 
-  function renderDetailsBody(sub) {
+function renderDetailsBody(sub) {
     const key = serialKey(sub.serial);
     const failed = failedLabels(sub);
-    // What the technician wrote at the QA stays exactly as written, and comes first.
-    let html = `<div><p class="${LABEL_CLS}">Comment from the QA</p>${sub.comment
+    // In the final check the comment of the QA stays on top (the final check reads it). When only looking, every
+    // comment (kiosk note, QA1, QA2, final check note) is on the Comments tab.
+    let html = detailMode !== "final" ? "" : `<div><p class="${LABEL_CLS}">Comment from the QA</p>${sub.comment
       ? `<p class="whitespace-pre-wrap break-words text-sm text-graphite-100">${escapeHtml(sub.comment)}</p>`
       : `<p class="text-sm text-graphite-500">No comment was written.</p>`}</div>`;
     if (detailMode === "final") {
@@ -1934,6 +1453,7 @@
       html += `<div><p class="${LABEL_CLS}">Failed checks</p>${failed.map((l) => `<p class="text-sm text-graphite-200">${resultBadge("fail")} ${escapeHtml(l)}</p>`).join("")}</div>`;
     }
     html += qa1BlockHtml(sub.qa1);
+    html += deskStepsHtml(sub.serial);
     html += detailMode === "final" ? finalFormHtml(key) : finalReadHtml(key, failed.length);
     // Results that were changed after the QA (in the final check, or by hand earlier): from -> to, by whom, when.
     if (sub.edits && sub.edits.length) {
@@ -1950,6 +1470,7 @@
     }
     SECTION_KEYS.forEach((step) => {
       const section = SECTIONS[step];
+      let qa2LabelShown = false;
       const rows = section.items
         .map((label, idx) => {
           let row;
@@ -1960,12 +1481,24 @@
             row = `<div class="flex items-center justify-between gap-3 py-1 text-sm"><span class="text-graphite-300">${escapeHtml(label)}</span>${resultBadge(val)}</div>`;
           }
           // the camera check is followed by the link to where the camera was looked at
-          if (step === "2" && label === TEST_ORDER_ITEM) row += testOrderHtml(sub.testOrder, sub.serial);
+          if (step === "2" && label === TEST_ORDER_ITEM) row += detailMode === "final" ? testOrderEditHtml(sub) : testOrderHtml(sub.testOrder, sub.serial) + testOrderHistoryHtml(sub.testOrderHistory, sub.testOrder);
           // a QA that was done in two parts: the results are labelled by the part they belong to
           if (sub.qa1 && step === "2") {
-            const isR = (l) => /^Round [12] - /.test(l);
-            if (idx === 0 && isR(label)) row = qaPartLabelHtml(`QA1 · Restarts (${section.items.filter(isR).length})`) + row;
-            else if (!isR(label) && idx > 0 && isR(section.items[idx - 1])) row = qaPartLabelHtml(`QA2 · Checks (${SECTION_KEYS.reduce((n, st) => n + SECTIONS[st].items.length, 0) - section.items.filter(isR).length})`) + row;
+            // the Functional results come in runs: QA1 (restarts), QA2, QA1 (power button test), QA2 again
+            const inQa1 = (l) => /^Round [12] - /.test(l) || l === QA1_EXTRA_ITEM;
+            const part = inQa1(label) ? "qa1" : "qa2";
+            const prevPart = idx > 0 ? (inQa1(section.items[idx - 1]) ? "qa1" : "qa2") : null;
+            if (part !== prevPart) {
+              if (part === "qa1") {
+                let n = 0;
+                for (let j = idx; j < section.items.length && inQa1(section.items[j]); j++) n++;
+                row = qaPartLabelHtml(idx === 0 ? `QA1 · Restarts (${n})` : "QA1 · Power button test") + row;
+              } else {
+                const total = SECTION_KEYS.reduce((n, st) => n + SECTIONS[st].items.length, 0) - section.items.filter(inQa1).length;
+                row = qaPartLabelHtml(qa2LabelShown ? "QA2 · Checks (continued)" : `QA2 · Checks (${total})`) + row;
+                qa2LabelShown = true;
+              }
+            }
           }
           return row;
         })
@@ -1975,15 +1508,7 @@
     return html;
   }
 
-  function afterDataChanged() {
-    markSessions(allSubmissions);
-    renderStats(allSubmissions);
-    renderTechnicians(allSubmissions);
-    renderChart(allSubmissions);
-    refresh();
-  }
-
-  async function fetchSubmissionsQuietly() {
+async function fetchSubmissionsQuietly() {
     try {
       const res = await fetch(`${WEBHOOK_URL}?action=listSubmissions`);
       const data = await res.json();
@@ -1994,27 +1519,48 @@
     return null;
   }
 
-  function sameInspection(a, b) {
+function sameInspection(a, b) {
     return a.row === b.row && a.serial === b.serial && a.inspectionDate === b.inspectionDate;
   }
 
-  // Swap in freshly loaded data and keep the open window pointing at the same inspection.
-  function replaceAllSubmissions(fresh, previousDetail) {
+function replaceAllSubmissions(fresh, previousDetail) {
     fresh.forEach((s, i) => { s.__order = i; });
     allSubmissions = fresh;
     currentDetail = previousDetail ? fresh.find((s) => sameInspection(s, previousDetail)) || null : null;
     afterDataChanged();
   }
 
-  document.getElementById("detail-body").addEventListener("click", (e) => {
+document.getElementById("detail-tabs").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-dtab]");
+    if (!t || t.dataset.dtab === detailTab) return;
+    detailTab = t.dataset.dtab;
+    renderDetail();
+    const again = document.querySelector(`[data-dtab="${detailTab}"]`);
+    if (again) again.focus({ preventScroll: true });
+  });
+document.getElementById("detail-tabs").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    detailTab = detailTab === "details" ? "comments" : "details";
+    renderDetail();
+    const again = document.querySelector(`[data-dtab="${detailTab}"]`);
+    if (again) again.focus({ preventScroll: true });
+  });
+document.getElementById("detail-body").addEventListener("click", (e) => {
     const act = e.target.closest("[data-final-act]");
     if (act && !act.disabled) { saveFinal(act.dataset.finalAct); return; }
     const sw = e.target.closest("[data-edit-key]");
     if (sw && !sw.disabled && detailMode === "final") setFinalEdit(sw.dataset.editKey, sw.dataset.editVal);
   });
 
-  document.getElementById("detail-body").addEventListener("input", (e) => {
+document.getElementById("detail-body").addEventListener("input", (e) => {
     if (e.target.id === "final-who-other") { finalWhoOther = e.target.value; return; }
+    if (e.target.id === "final-test-order") {
+      finalTestOrder = e.target.value;
+      finalWarned = false;
+      if (finalMsg && finalMsg.kind !== "error") { finalMsg = null; renderFinalMessage(); }
+      updateFinalButtons();
+      return;
+    }
     if (e.target.id !== "final-note") return;
     finalDraftNote = e.target.value;
     finalWarned = false;
@@ -2022,7 +1568,7 @@
     updateFinalButtons();
   });
 
-  document.getElementById("detail-body").addEventListener("change", (e) => {
+document.getElementById("detail-body").addEventListener("change", (e) => {
     if (e.target.id !== "final-who") return;
     finalWho = e.target.value;
     const other = document.getElementById("final-who-other");
@@ -2031,7 +1577,7 @@
     if (finalMsg && finalMsg.kind === "error") { finalMsg = null; renderFinalMessage(); }
   });
 
-  document.getElementById("detail-close").addEventListener("click", () => {
+document.getElementById("detail-close").addEventListener("click", () => {
     if (detailMode === "final") {
       if (finalSaving) return; // let the save finish first
       if (finalDirty() && !finalWarned) { // a note or a changed result was not saved: ask once
@@ -2044,97 +1590,940 @@
     closeDetail();
   });
 
-  let currentFiltered = [];
+  // =====================================================================
+  // ASSEMBLY DESK — the virtual desks of the workshop: the big desk (two rows of 8 spots, A1–B8) and the small desk
+  // below it (two rows of 2 spots, C1–C4). A kiosk is put on a spot by its serial
+  // number; clicking it shows its steps (Vision Service, InTune, Windows activation, QA1, QA2, final check) and starts the QA
+  // from there. When everything is done the kiosk is shipped with one button and moves into the "Shipped kiosks"
+  // table, where all its results can still be looked at. Where a kiosk stands and the steps ticked by hand (VS,
+  // activation, the InTune timer) live in the Sheet's "Desk" tab; QA1, QA2 and the final check come from their own data.
+  // =====================================================================
+  const KIOSK_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
+  '<rect class="d-tray" x="9" y="10" width="82" height="78" rx="11"/>' +
+  '<rect class="d-tray-in" x="14" y="15" width="72" height="68" rx="7.5"/>' +
+  '<rect class="d-arch" x="38.5" y="55" width="23" height="40" rx="6"/>' +
+  '<rect class="d-arch-hi" x="40.5" y="57" width="5" height="36" rx="2.5"/>' +
+  '<g class="d-vent"><line x1="44" y1="64" x2="56" y2="64"/><line x1="44" y1="66.6" x2="56" y2="66.6"/><line x1="44" y1="69.2" x2="56" y2="69.2"/><line x1="44" y1="71.8" x2="56" y2="71.8"/><line x1="44" y1="74.4" x2="56" y2="74.4"/></g>' +
+  '<circle class="d-screw" cx="42.5" cy="61" r=".9"/><circle class="d-screw" cx="57.5" cy="61" r=".9"/>' +
+  '<rect class="d-halo" x="9" y="39" width="76" height="22" rx="9"/>' +
+  '<rect class="d-head" x="7" y="44" width="80" height="14" rx="2.6"/>' +
+  '<rect class="d-head-edge" x="7" y="55.5" width="80" height="2.5" rx="1.2"/>' +
+  '<rect class="d-light" x="16" y="46" width="62" height="7" rx="2.2"/>' +
+  '<rect class="d-pay" x="86" y="40" width="10.5" height="21" rx="2.6"/>' +
+  '<rect class="d-pay-scr" x="87.8" y="42.6" width="6.9" height="6" rx="1"/>' +
+  '<g class="d-it" transform="translate(19 64) scale(1.25)"><path class="d-it-shield" d="M6 .7 11.2 2.5v4.3c0 3.1-2.2 5.4-5.2 6.5C3 12.2.8 9.9.8 6.8V2.5z"/><path class="d-it-chk" d="M3.6 7.1 5.3 8.8 8.6 5.4"/></g>' +
+  '</svg>';
+  const BIG_BAYS = ["A", "B"].flatMap((r) => [1, 2, 3, 4, 5, 6, 7, 8].map((c) => r + c)); // the big desk
+  const SMALL_BAYS = ["C1", "C2", "C3", "C4"];                                             // the small desk (2 per row)
+  const BAY_IDS = BIG_BAYS.concat(SMALL_BAYS);
+  const INTUNE_DEFAULT_MIN = 30;
+  const MAX_BATCH = 5;
+  const STEP_KEYS = ["vs", "intune", "act", "qa1", "qa2", "final"]; // the order of the work on the desk
+  const STEP_NAMES = { qa1: "QA1", qa2: "QA2", vs: "Vision Service", act: "Windows activation", intune: "InTune", final: "Final check" };
 
-  function refresh() {
-    populateFilterOptions();
-    const f = getFilters();
-    currentFiltered = applyFilters(allSubmissions, f);
-    const draftRows = buildDraftRows(f);
-    currentUnfinished = draftRows.filter((r) => r.state === "unfinished");
-    currentProgress = draftRows.filter((r) => r.state === "progress");
-    renderView();
+  let deskList = [];             // every desk record the server knows: on the desk, and shipped from it
+  let deskState = "loading";     // "loading" | "ready" | "unsupported" (an Apps Script from before the desk)
+  let serverBays = null;         // the spots the Apps Script knows (null: a script from before the small desk -> A1–B8 only)
+  let selectedSerial = "";
+  let movingSerial = "";         // a kiosk that is being moved: the next click on a free spot puts it there
+  const batch = new Set();       // kiosks ticked for a QA1 together
+  const noteDrafts = new Map();  // SERIAL -> a note being typed and not saved yet
+  let notePinned = "";           // the kiosk whose note bubble was clicked open (it stays open)
+  // Until the backend can store notes ('deskNote'), a note is kept in this browser only, so the feature can be tried.
+  const LOCAL_NOTES_KEY = "qaDeskNotesLocal";
+  const localNotes = (() => { try { return JSON.parse(localStorage.getItem(LOCAL_NOTES_KEY) || "{}") || {}; } catch (e) { return {}; } })();
+  function localNoteSet(serial, v) {
+    if (v) localNotes[serial] = v; else delete localNotes[serial];
+    try { localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(localNotes)); } catch (e) {}
+  }
+  // the note of a kiosk: the backend's when it has one, otherwise the one kept in this browser
+  function noteOf(rec) {
+    if (!rec) return { note: "", by: "", at: "", local: false };
+    if (rec.note || rec.noteAt) return { note: rec.note || "", by: rec.noteBy || "", at: rec.noteAt || "", local: false };
+    const l = localNotes[rec.serial];
+    return l && l.note ? { note: l.note, by: l.by || "", at: l.at || "", local: true } : { note: "", by: "", at: "", local: false };
+  }
+  let shipMode = false;          // choosing several kiosks to ship at once
+  const shipPick = new Set();    // the kiosks chosen for that
+  let deskBusy = false;          // a change is on its way to the server
+  let subsBySerial = new Map();  // SERIAL -> every finished QA row of it
+  let shippedRowsCache = [];     // the rows of the Shipped kiosks table as drawn (the buttons point into this)
+  let showOffDesk = false;
+  let shipSearch = "";
+  let toastTimer = null;
+
+  const $ = (sel) => document.querySelector(sel);
+  const techName = () => { try { return (localStorage.getItem(FINAL_NAME_KEY) || "").trim(); } catch (e) { return ""; } };
+  const deskOn = () => deskList.filter((d) => d.status === "desk");
+  const deskBySerial = () => new Map(deskList.map((d) => [d.serial, d]));
+  const deskAt = (bay) => deskList.find((d) => d.status === "desk" && d.bay === bay) || null;
+  const bayUsable = (bay) => (Array.isArray(serverBays) ? serverBays.includes(bay) : BIG_BAYS.includes(bay));
+  const usableBays = () => BAY_IDS.filter(bayUsable);
+  const firstFreeBay = () => usableBays().find((b) => !deskAt(b)) || "";
+
+  const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const dayFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+  function whenText(iso) {
+    const t = Date.parse(iso);
+    if (!isFinite(t)) return "";
+    const d = new Date(t);
+    return (d.toDateString() === new Date().toDateString() ? "today " : dayFmt.format(d) + ", ") + timeFmt.format(d);
+  }
+  function clockText(ms) {
+    const t = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    const p = (n) => String(n).padStart(2, "0");
+    return h ? h + ":" + p(m) + ":" + p(s) : p(m) + ":" + p(s);
+  }
+  // M- and five letters, however it is typed ("bcdfg", "m-bcdfg", "M-BCD FG")
+  function formatSerialInput(raw) {
+    const v = String(raw || "").toUpperCase();
+    const body = (v.startsWith("M-") ? v.slice(2) : v).replace(/[^A-Z]/g, "").slice(0, 5);
+    return body ? "M-" + body : "";
+  }
+  const serialOk = (v) => /^M-[A-Z]{5}$/.test(v);
+
+  // ---------- where a kiosk stands in its steps ----------
+  function intuneOf(rec) {
+    const it = rec && rec.intune;
+    if (!it) return { state: "none" };
+    if (it.skippedAt) return { state: "done", skipped: true, at: it.skippedAt, by: it.skipBy, it };
+    const ends = Date.parse(it.endsAt);
+    if (isFinite(ends) && ends <= Date.now()) return { state: "done", skipped: false, at: it.endsAt, by: it.by, it };
+    return { state: "run", ends, it };
   }
 
-  document.getElementById("table-body").addEventListener("change", (e) => {
-    const box = e.target.closest("input[data-ship-serial]");
-    if (box) toggleShipped(box.dataset.shipSerial, box.checked);
-  });
+  function phasesOf(serial) {
+    const key = serialKey(serial);
+    const runs = subsBySerial.get(key) || [];
+    const sub = runs.length ? currentOfKiosk(runs) : null;
+    const waiting = lastQa1.find((q) => q.serial === key) || null;
+    const mine = lastDrafts.filter((d) => (d.serialValues || []).some((v) => serialKey(v) === key));
+    const draftOf = (mode) => mine.find((d) => (mode === "full" ? !d.mode || d.mode === "full" : d.mode === mode)) || null;
+    const dState = (d) => (draftState(d) === "progress" ? "progress" : "paused");
+    const full = draftOf("full"), d1 = draftOf("qa1"), d2 = draftOf("qa2");
+    const rec = deskBySerial().get(key) || null;
+    let qa1, qa2;
+    if (sub || waiting) qa1 = { state: "done", info: sub ? sub.qa1 : waiting, viaFull: !!(sub && !sub.qa1) };
+    else if (d1) qa1 = { state: dState(d1), draft: d1 };
+    else if (full) qa1 = { state: dState(full), draft: full, full: true };
+    else qa1 = { state: "none" };
+    if (sub) qa2 = { state: "done", sub };
+    else if (d2) qa2 = { state: dState(d2), draft: d2 };
+    else if (full) qa2 = { state: dState(full), draft: full, full: true };
+    else qa2 = { state: qa1.state === "done" ? "none" : "blocked" };
+    const it = intuneOf(rec);
+    const steps = { qa1: qa1.state === "done", qa2: qa2.state === "done", vs: !!(rec && rec.vs), act: !!(rec && rec.act), intune: it.state === "done", final: isFinalDone(key) };
+    const missing = STEP_KEYS.filter((k) => !steps[k]);
+    return { key, sub, rec, qa1, qa2, intune: it, vs: steps.vs, act: steps.act, finalDone: steps.final, steps, missing, ready: missing.length === 0 };
+  }
 
-  document.getElementById("table-body").addEventListener("click", (e) => {
-    const detailBtn = e.target.closest("[data-detail-idx]");
-    const finalBtn = e.target.closest("[data-final-open]");
-    if (detailBtn) openDetail(currentFiltered[Number(detailBtn.dataset.detailIdx)]);
-    else if (finalBtn && !finalBtn.disabled) openFinal(finalBtn.dataset.finalOpen);
-  });
+  // The chip under a kiosk: something being done right now first (a QA open on a computer), then the first step
+  // that is not done, in the order of the work: Vision Service, InTune, Windows activation, QA1, QA2, Final check.
+  // A running InTune timer is shown while the next steps wait (it runs by itself).
+  function nextChip(p) {
+    if (p.ready) return { text: "Ready to ship", cls: "chip-go" };
+    if (p.qa1.state === "progress") return { text: "QA1 running", cls: "chip-run" };
+    if (p.qa2.state === "progress") return { text: "QA2 running", cls: "chip-run" };
+    const qaChip = (q, n) => ({ text: q.state === "paused" ? n + " paused" : "Needs " + n, cls: q.state === "paused" ? "chip-run" : "chip-none" });
+    const running = p.intune.state === "run" ? { text: "InTune " + clockText(p.intune.ends - Date.now()), cls: "chip-run", ends: p.intune.ends } : null;
+    if (!p.vs) return { text: "Needs Vision Service", cls: "chip-none" };
+    if (p.intune.state === "none") return { text: "Needs InTune", cls: "chip-none" };
+    if (running) return running;
+    if (p.qa1.state !== "done") return qaChip(p.qa1, "QA1");
+    if (!p.act) return { text: "Needs Act.", cls: "chip-none" };
+    if (p.qa2.state !== "done") return qaChip(p.qa2, "QA2");
+    return { text: "Final check", cls: "chip-none" };
+  }
+  // a kiosk that can be shipped: every check is done (Vision Service, InTune, activation, QA1, QA2, final check)
+  const canShip = (p) => !!p.sub && p.ready;
 
-  document.getElementById("btn-start-qa2").addEventListener("click", () => {
-    const tab = document.querySelector('[data-view="waiting"]');
-    if (view !== "waiting") tab.click();
-    document.getElementById("view-tabs").scrollIntoView({ behavior: "smooth", block: "start" });
-    tab.focus();
-  });
+  function dotState(p, k) {
+    if (p.steps[k]) return "done";
+    if (k === "qa1" && (p.qa1.state === "progress" || p.qa1.state === "paused")) return "run";
+    if (k === "qa2" && (p.qa2.state === "progress" || p.qa2.state === "paused")) return "run";
+    if (k === "intune" && p.intune.state === "run") return "run";
+    return "";
+  }
 
-  document.getElementById("view-tabs").addEventListener("click", (e) => {
-    const tab = e.target.closest("[data-view]");
-    if (!tab || tab.dataset.view === view) return;
-    view = tab.dataset.view;
-    renderView();
-    // whatever is shown for this list (the table, or the message that it is empty) fades in
-    ["table-card", "drafts-card", "waiting-card", "empty-state"].forEach((id) => {
-      const el = document.getElementById(id);
-      el.classList.remove("view-enter");
-      void el.offsetWidth; // (so the animation can play again)
-      el.classList.add("view-enter");
+  // a kiosk that can be ticked for a QA1 together with others: no QA1 yet, nobody working on one
+  // the steps have to be done in order: a step opens only when every step before it is done.
+  // Returns the first earlier step that is still open ("" when the step can be done now).
+  // Vision Service and InTune can each be started on their own; Windows activation is not needed for QA1.
+  const STEP_NEEDS = { vs: [], intune: [], act: ["vs", "intune"], qa1: ["vs", "intune"], qa2: ["vs", "intune", "act", "qa1"], final: ["vs", "intune", "act", "qa1", "qa2"] };
+  const lockedBy = (p, k) => (STEP_NEEDS[k] || []).find((x) => !p.steps[x]) || "";
+  const lockText = (p, k) => "Can be done after " + STEP_NAMES[lockedBy(p, k)];
+  const canBatch = (p) => p.qa1.state === "none" && !p.sub && !lockedBy(p, "qa1");
+
+  // ---------- small helpers: toast, dialog ----------
+  function toast(message, bad) {
+    const el = $("#room-toast");
+    el.textContent = message;
+    el.classList.toggle("bad", !!bad);
+    el.classList.remove("hidden");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.add("hidden"), bad ? 6000 : 3500);
+  }
+
+  // One dialog for everything: a question (ok / cancel), a field (serial, minutes) or a choice of names.
+  //   askDialog({ title, text, ok, danger, input: { label, placeholder, value, format, valid, hint, inputmode }, names: [...] })
+  // resolves with true (a question), the typed text (a field), the chosen name, or null when it was cancelled.
+  function askDialog(o) {
+    return new Promise((resolve) => {
+      const dlg = $("#room-dlg"), form = $("#room-dlg-form");
+      const field = $("#room-dlg-field"), input = $("#room-dlg-input"), hint = $("#room-dlg-hint");
+      const names = $("#room-dlg-names"), grid = $("#room-dlg-name-grid"), other = $("#room-dlg-other");
+      const ok = $("#room-dlg-ok");
+      let chosen = "";
+      $("#room-dlg-title").textContent = o.title || "";
+      const text = $("#room-dlg-text");
+      text.textContent = o.text || "";
+      text.classList.toggle("hidden", !o.text);
+      ok.textContent = o.ok || "OK";
+      ok.className = "btn-s " + (o.danger ? "danger" : "primary");
+      field.classList.toggle("hidden", !o.input);
+      names.classList.toggle("hidden", !o.names);
+      const check = () => {
+        if (o.input) {
+          const v = o.input.format ? o.input.format(input.value) : input.value;
+          if (o.input.format && v !== input.value) input.value = v;
+          const good = !!o.input.valid(v);
+          ok.disabled = !good;
+          hint.textContent = good ? "" : (o.input.hint || "");
+        } else if (o.names) {
+          ok.disabled = !(chosen || other.value.trim());
+        }
+      };
+      if (o.input) {
+        $("#room-dlg-label").textContent = o.input.label || "";
+        input.value = o.input.value || "";
+        input.placeholder = o.input.placeholder || "";
+        input.setAttribute("inputmode", o.input.inputmode || "text");
+        input.oninput = check;
+      }
+      if (o.names) {
+        grid.innerHTML = o.names.map((n) => `<button type="button" class="name-btn" data-name="${attr(n)}" aria-pressed="false">${escapeHtml(n)}</button>`).join("");
+        other.value = "";
+        other.oninput = () => { chosen = ""; grid.querySelectorAll(".name-btn").forEach((b) => b.setAttribute("aria-pressed", "false")); check(); };
+        grid.onclick = (e) => {
+          const b = e.target.closest(".name-btn");
+          if (!b) return;
+          chosen = b.dataset.name;
+          other.value = "";
+          grid.querySelectorAll(".name-btn").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+          check();
+        };
+      }
+      let settled = false;
+      const done = (value) => { if (settled) return; settled = true; dlg.close(); resolve(value); };
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        if (ok.disabled) return;
+        if (o.input) done(o.input.format ? o.input.format(input.value) : input.value);
+        else if (o.names) done(chosen || other.value.trim());
+        else done(true);
+      };
+      $("#room-dlg-cancel").onclick = () => done(null);
+      dlg.oncancel = (e) => { e.preventDefault(); done(null); };
+      ok.disabled = false;
+      check();
+      dlg.showModal();
+      if (o.input) { input.focus(); input.select(); } else if (o.names && !o.names.length) other.focus();
     });
-  });
+  }
 
-  // "Load more" always adds another page of 20 (or whatever is left, if that is less).
-  document.getElementById("btn-load-more").addEventListener("click", () => {
-    visibleLimit += PAGE_SIZE;
-    renderView();
-  });
+  async function nameDialog() {
+    const v = await askDialog({ title: "Who is working?", text: "Your name is written next to what you do on the desk.", names: PEOPLE.slice(), ok: "Use this name" });
+    if (v) { try { localStorage.setItem(FINAL_NAME_KEY, v); } catch (e) { /* ignore */ } }
+    render();
+    return v || "";
+  }
+  async function ensureTech() { return techName() ? true : !!(await nameDialog()); }
 
-  const refreshFromTop = () => { visibleLimit = PAGE_SIZE; refresh(); };
-  ["filter-technician", "filter-serial", "filter-from", "filter-to"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", refreshFromTop);
-    document.getElementById(id).addEventListener("change", refreshFromTop);
-  });
-  document.getElementById("filter-serial").addEventListener("input", (e) => {
-    const cursor = e.target.selectionStart;
-    e.target.value = e.target.value.toUpperCase();
-    e.target.setSelectionRange(cursor, cursor);
-  });
-  document.getElementById("filter-only-fails").addEventListener("change", refreshFromTop);
-  document.getElementById("filter-final").addEventListener("change", refreshFromTop);
-  document.getElementById("btn-clear-filters").addEventListener("click", () => {
-    document.getElementById("filter-technician").value = "";
-    document.getElementById("filter-serial").value = "";
-    document.getElementById("filter-from").value = "";
-    document.getElementById("filter-to").value = "";
-    document.getElementById("filter-only-fails").checked = false;
-    document.getElementById("filter-final").value = "";
-    refreshFromTop();
-  });
+  // ---------- doing something on the desk ----------
+  async function deskAct(body, okText) {
+    if (deskBusy) return false;
+    const by = techName();
+    if (!by) { toast("Choose who you are first.", true); return false; }
+    deskBusy = true;
+    render();
+    try {
+      const data = await postJson(Object.assign({}, body, { by }));
+      if (data && data.ok !== true && /Unknown POST action/i.test(data.error || "")) throw new Error("This needs the updated backend: it does not know “" + body.action + "” yet. Nothing was saved.");
+      if (!data || data.ok !== true) throw new Error((data && data.error) || "The server did not accept it.");
+      if (Array.isArray(data.desk)) { deskList = data.desk; deskState = "ready"; }
+      if (okText) toast(okText);
+      return true;
+    } catch (err) {
+      toast(err && err.message && !/fetch|network/i.test(err.message) ? err.message : "Could not reach the server. Nothing was changed.", true);
+      return false;
+    } finally {
+      deskBusy = false;
+      lastLiveSignature = liveSignature();
+      render();
+    }
+  }
 
-  document.addEventListener("themechange", () => {
-    if (allSubmissions.length) renderChart(allSubmissions);
+  async function placeFlow(bay, presetSerial) {
+    if (deskState !== "ready") { toast("The desk is not available yet.", true); return; }
+    if (!bay) { toast(`All ${usableBays().length} spots are taken. Ship a kiosk or take one off first.`, true); return; }
+    if (!(await ensureTech())) return;
+    const serial = await askDialog({
+      title: "Place a kiosk on " + bay, text: "Type its serial number.", ok: "Place kiosk",
+      input: { label: "Serial number", placeholder: "M-ABCDE", value: presetSerial || "", format: formatSerialInput, valid: serialOk, hint: "M- and 5 letters", inputmode: "text" },
+    });
+    if (!serial) return;
+    if (await deskAct({ action: "deskPlace", serial, bay }, serial + " placed on " + bay + ".")) { selectedSerial = serial; render(); }
+  }
+
+  async function moveTo(bay) {
+    const serial = movingSerial;
+    movingSerial = "";
+    if (!serial) return;
+    if (await deskAct({ action: "deskMove", serial, bay }, serial + " moved to " + bay + ".")) selectedSerial = serial;
+    render();
+  }
+
+  async function removeFlow(serial) {
+    if (!(await ensureTech())) return;
+    const yes = await askDialog({ title: "Take " + serial + " off the desk?", text: "It will be gone from the desk (nothing is deleted: its QA results stay). You can place it again later.", ok: "Take it off", danger: true });
+    if (!yes) return;
+    if (await deskAct({ action: "deskRemove", serial }, serial + " is off the desk.")) { if (selectedSerial === serial) selectedSerial = ""; batch.delete(serial); render(); }
+  }
+
+  async function shipFlow(serial) {
+    const p = phasesOf(serial);
+    if (!canShip(p)) { toast(serial + " cannot be shipped yet. Still to do: " + p.missing.map((k) => STEP_NAMES[k]).join(", ") + ".", true); return; }
+    if (!(await ensureTech())) return;
+    const yes = await askDialog({
+      title: "Ship " + serial + "?",
+      text: "It moves into the Shipped kiosks table. You can still look at all its results there.",
+      ok: "Shipped",
+    });
+    if (!yes) return;
+    if (await deskAct({ action: "deskShip", serial }, serial + " shipped.")) {
+      if (selectedSerial === serial) selectedSerial = "";
+      batch.delete(serial);
+      await refreshLive();
+      render();
+    }
+  }
+
+  // ---------- shipping several kiosks at once ----------
+  const SHIP_MANY_MAX = 20;
+  function toggleShipPick(serial, on) {
+    if (!canShip(phasesOf(serial))) { toast(serial + " has not passed every check yet: it cannot be shipped.", true); render(); return; }
+    const want = on === undefined ? !shipPick.has(serial) : on;
+    if (want) shipPick.add(serial); else shipPick.delete(serial);
+    renderDesk();
+  }
+
+  async function shipManyFlow() {
+    const serials = deskOn().map((d) => d.serial).filter((x) => shipPick.has(x) && canShip(phasesOf(x))); // in the order they stand on the desk
+    if (!serials.length || deskBusy) return;
+    if (!(await ensureTech())) return;
+    const notDone = serials.map((x) => ({ x, m: phasesOf(x).missing.map((k) => STEP_NAMES[k]) })).filter((o) => o.m.length);
+    const n = serials.length, word = n === 1 ? "kiosk" : "kiosks";
+    const yes = await askDialog({
+      title: `Ship ${n} ${word}?`,
+      text: serials.join(", ") + ". " + (notDone.length
+        ? "Not everything is done for " + notDone.map((o) => o.x + " (" + o.m.join(", ") + ")").join("; ") + ". Ship them anyway?"
+        : "They move into the Shipped kiosks table. You can still look at all their results there."),
+      ok: notDone.length ? `Ship ${n} anyway` : `Ship ${n} ${word}`, danger: notDone.length > 0,
+    });
+    if (!yes) return;
+    const by = techName();
+    deskBusy = true;
+    render();
+    let shipped = [], failed = [];
+    try {
+      let data = await postJson({ action: "deskShipMany", serials, by });
+      if (data && data.ok !== true && /Unknown POST action/i.test(data.error || "")) {
+        // an Apps Script from before 'deskShipMany': one after the other
+        for (const serial of serials) {
+          const r = await postJson({ action: "deskShip", serial, by }).catch(() => null);
+          if (r && r.ok) { shipped.push(serial); if (Array.isArray(r.desk)) deskList = r.desk; } else failed.push({ serial, error: (r && r.error) || "Could not reach the server." });
+        }
+        data = null;
+      }
+      if (data) {
+        if (!data.ok && !Array.isArray(data.failed)) throw new Error(data.error || "The server did not accept it.");
+        shipped = data.shipped || []; failed = data.failed || [];
+        if (Array.isArray(data.desk)) { deskList = data.desk; deskState = "ready"; }
+      }
+    } catch (err) {
+      toast(err && err.message && !/fetch|network/i.test(err.message) ? err.message : "Could not reach the server. Nothing was changed.", true);
+    } finally {
+      deskBusy = false;
+    }
+    shipped.forEach((x) => { shipPick.delete(x); batch.delete(x); });
+    if (shipped.length && !failed.length) { shipMode = false; shipPick.clear(); toast(`${shipped.length} ${shipped.length === 1 ? "kiosk" : "kiosks"} shipped: ${shipped.join(", ")}.`); }
+    else if (failed.length) toast(`${shipped.length ? "Shipped: " + shipped.join(", ") + ". " : ""}Not shipped: ${failed.map((f) => f.serial + " (" + f.error + ")").join("; ")}`, true);
+    await refreshLive();
+    lastLiveSignature = liveSignature();
+    render();
+  }
+
+  async function unshipFlow(serial) {
+    if (!(await ensureTech())) return;
+    const yes = await askDialog({ title: "Take " + serial + " back to the desk?", text: "It leaves the Shipped kiosks table and goes back onto the desk (onto its old spot if that is free).", ok: "Take it back" });
+    if (!yes) return;
+    if (await deskAct({ action: "deskUnship", serial }, serial + " is back on the desk.")) { await refreshLive(); selectedSerial = serial; render(); }
+  }
+
+  async function shipOffDeskFlow(serial) { // a QA'd kiosk that was never on the desk
+    if (!(await ensureTech())) return;
+    const yes = await askDialog({ title: "Mark " + serial + " as shipped?", text: "It was never on the desk, so none of the desk steps are recorded for it.", ok: "Shipped" });
+    if (!yes) return;
+    if (await deskAct({ action: "deskShip", serial }, serial + " shipped.")) { await refreshLive(); render(); }
+  }
+
+  async function intuneEditFlow(serial) {
+    const rec = deskBySerial().get(serial);
+    const st = intuneOf(rec);
+    if (st.state !== "run") return;
+    const left = Math.max(1, Math.ceil((st.ends - Date.now()) / 60000));
+    const v = await askDialog({
+      title: "Change the InTune time for " + serial, text: "How many minutes should be left, counted from now?", ok: "Set the time",
+      input: { label: "Minutes left", value: String(left), format: (x) => String(x).replace(/[^0-9]/g, "").slice(0, 3), valid: (x) => Number(x) >= 1 && Number(x) <= 240, hint: "A number from 1 to 240", inputmode: "numeric" },
+    });
+    if (v) await deskAct({ action: "deskIntune", op: "edit", serial, minutes: Number(v) }, "InTune for " + serial + " now has " + v + " min left.");
+  }
+
+  async function intuneSkipFlow(serial) {
+    if (!(await ensureTech())) return;
+    const yes = await askDialog({ title: "Skip the InTune timer for " + serial + "?", text: "InTune is marked as done now, recorded as skipped by " + techName() + ".", ok: "Skip and mark done" });
+    if (yes) await deskAct({ action: "deskIntune", op: "skip", serial }, "InTune marked as done for " + serial + ".");
+  }
+
+  async function intuneResetFlow(serial) {
+    const yes = await askDialog({ title: "Reset InTune for " + serial + "?", text: "It becomes as if InTune was never started.", ok: "Reset", danger: true });
+    if (yes) await deskAct({ action: "deskIntune", op: "reset", serial }, "InTune reset for " + serial + ".");
+  }
+
+  // ---------- drawing ----------
+  function qaUrl(mode, serials, extra) {
+    const q = [`mode=${mode}`, mode === "qa2" ? `serial=${encodeURIComponent(serials[0])}` : `serials=${serials.map(encodeURIComponent).join(",")}`];
+    if (techName()) q.push(`tech=${encodeURIComponent(techName())}`);
+    q.push("start=1");
+    return "qa-app.html?" + q.join("&") + (extra || "");
+  }
+  const resumeUrl = (draft) => `qa-app.html?draftId=${encodeURIComponent(draft.id)}` + (draft.mode === "qa1" || draft.mode === "qa2" ? `&mode=${draft.mode}` : "");
+
+  function renderTech() {
+    const n = techName();
+    $("#tech-name").textContent = n || "not chosen";
+    $("#tech-chip").classList.toggle("none", !n);
+    $("#tech-chip").setAttribute("aria-label", n ? "Technician " + n + ". Change technician" : "Choose who is working");
+  }
+
+  function renderStats() {
+    const ready = deskState === "ready";
+    const on = deskOn().map((d) => phasesOf(d.serial));
+    const set = (id, v) => { $(id).innerHTML = v; };
+    set("#stat-desk", ready ? `${on.length} <small>of ${usableBays().length}</small>` : "–");
+    set("#stat-q1", ready ? String(on.filter((p) => p.qa1.state !== "done").length) : "–");
+    set("#stat-q2", ready ? String(on.filter((p) => p.qa1.state === "done" && p.qa2.state !== "done").length) : "–");
+    set("#stat-ready", ready ? String(on.filter((p) => p.ready).length) : "–");
+    const shipN = shippedMap.size, total = shipN + on.length, haveAll = shipState === "ready" && ready;
+    set("#stat-shipped", shipState === "ready" ? String(shipN) : "–");
+    set("#stat-shipped-sub", haveAll ? `of ${total} kiosks · ${on.length} still to ship` : "&nbsp;");
+    $("#stat-shipped-bar").style.width = haveAll && total ? (100 * shipN / total).toFixed(1) + "%" : "0";
+  }
+
+  function spotHtml(bay) {
+    const rec = deskAt(bay);
+    if (!rec) {
+      if (deskState === "ready" && !bayUsable(bay)) { // the Apps Script in use does not know this spot yet
+        return `<button type="button" class="spot spot-free" data-bay="${bay}" data-fk="spot-${bay}" disabled title="Deploy the new Apps Script version to use this spot" aria-label="${attr(`Spot ${bay} needs the new Apps Script version`)}">
+        <span class="spot-label">${bay}</span><span class="spot-hint" style="opacity:1;text-align:center">Needs the new script</span></button>`;
+      }
+      const label = movingSerial ? `Move ${movingSerial} to spot ${bay}` : `Free spot ${bay}. Place a kiosk here`;
+      return `<button type="button" class="spot spot-free${movingSerial ? " spot-target" : ""}" data-bay="${bay}" data-fk="spot-${bay}" aria-label="${attr(label)}"${deskState === "ready" && !deskBusy && !shipMode ? "" : " disabled"}>
+        <span class="spot-label">${bay}</span><span class="spot-plus" aria-hidden="true">+</span><span class="spot-hint">${movingSerial ? "Move here" : "Place a kiosk"}</span></button>`;
+    }
+    const p = phasesOf(rec.serial), chip = nextChip(p);
+    const sel = selectedSerial === rec.serial;
+    const dots = STEP_KEYS.map((k) => `<i class="dot ${dotState(p, k)}" title="${attr(STEP_NAMES[k])}"></i>`).join("");
+    const shippable = canShip(p), picked = shippable && shipPick.has(rec.serial);
+    const box = shippable
+      ? `<input type="checkbox" class="batch-box" data-ship="${attr(rec.serial)}" data-fk="ship-${attr(rec.serial)}" aria-label="Ship ${attr(rec.serial)} together with the other chosen kiosks"${picked ? " checked" : ""}>`
+      : canBatch(p) ? `<input type="checkbox" class="batch-box" data-batch="${attr(rec.serial)}" data-fk="batch-${attr(rec.serial)}" aria-label="Include ${attr(rec.serial)} in a QA1 together with the other ticked kiosks"${batch.has(rec.serial) ? " checked" : ""}>` : "";
+    const svg = KIOSK_SVG.replace("<svg ", `<svg class="kiosk-svg${p.vs ? " vs-done" : ""}${p.intune.state === "run" ? " it-run" : p.intune.state === "done" ? " it-done" : ""}" `);
+    return `<div class="spot spot-busy${sel && !shipMode ? " is-selected" : ""}${picked ? " is-picked" : ""}${shipMode && !shippable ? " is-dim" : ""}${p.ready ? " is-ready" : ""}${movingSerial === rec.serial ? " is-moving" : ""}" data-bay="${bay}">
+      <span class="spot-label">${bay}</span>${box}${noteOf(rec).note ? `<button type="button" class="note-ic${notePinned === rec.serial ? " is-pinned" : ""}" data-note="${attr(rec.serial)}" data-fk="note-${attr(rec.serial)}" aria-label="Kiosk note of ${attr(rec.serial)}" aria-expanded="${notePinned === rec.serial}">i</button>` : ""}
+      <button type="button" class="kiosk-btn" data-serial="${attr(rec.serial)}" data-fk="kiosk-${attr(rec.serial)}" aria-pressed="${sel}" aria-label="${attr(rec.serial)} at ${bay}. ${attr(chip.text)}">
+        ${svg}<span class="plate">${escapeHtml(rec.serial)}</span><span class="next-chip ${chip.cls}"${chip.ends ? ` data-intune-ends="${chip.ends}"` : ""}>${escapeHtml(chip.text)}</span><span class="dots" aria-hidden="true">${dots}</span>
+      </button></div>`;
+  }
+
+  function renderDesk() {
+    $("#desk").innerHTML = BIG_BAYS.map(spotHtml).join("");
+    $("#desk-c").innerHTML = SMALL_BAYS.map(spotHtml).join("");
+    notePopRestore();
+    const banner = $("#move-banner");
+    const shippableOn = deskOn().filter((d) => canShip(phasesOf(d.serial)));
+    for (const x of [...shipPick]) if (!shippableOn.some((d) => d.serial === x)) shipPick.delete(x); // shipped or gone meanwhile
+    for (const x of [...batch]) if (!deskOn().some((d) => d.serial === x) || !canBatch(phasesOf(x))) batch.delete(x); // QA1 started or gone
+    const readyOn = shippableOn.filter((d) => phasesOf(d.serial).ready);
+    banner.classList.toggle("hidden", !movingSerial && !shipMode);
+    banner.innerHTML = shipMode
+      ? `<b>Ship several kiosks:</b> tick the ones that leave (only kiosks that passed every check can be chosen). ${readyOn.length ? `<button type="button" class="btn-s" data-act="ship-pick-ready" data-fk="ship-pick-ready">Choose all ready (${readyOn.length})</button> ` : ""}<button type="button" class="btn-s quiet" data-act="ship-cancel" data-fk="ship-cancel">Cancel</button>`
+      : movingSerial ? `Moving <b class="font-mono">${escapeHtml(movingSerial)}</b>: click a free spot. <button type="button" class="btn-s quiet" data-act="move-cancel" data-fk="move-cancel">Cancel</button>` : "";
+    const free = firstFreeBay();
+    const tools = [];
+    if (shipMode) {
+      tools.push(`<button type="button" class="btn-s primary" data-act="ship-many" data-fk="ship-many"${shipPick.size && !deskBusy ? "" : " disabled"}>Ship ${shipPick.size || ""} selected ✓</button>`);
+      tools.push(`<button type="button" class="btn-s quiet" data-act="ship-cancel" data-fk="ship-cancel2">Cancel</button>`);
+      $("#desk-tools").innerHTML = tools.join("");
+      return;
+    }
+    const picked = [...batch].filter((s) => { const d = deskOn().find((x) => x.serial === s); return d && canBatch(phasesOf(s)); });
+    if (picked.length) {
+      tools.push(`<a class="btn-s primary" data-fk="batch-go" href="${attr(qaUrl("qa1", picked))}">Start QA1 for ${picked.length} selected ›</a>`);
+      tools.push(`<button type="button" class="btn-s quiet" data-act="batch-clear" data-fk="batch-clear">Clear</button>`);
+    }
+    if (shipPick.size) {
+      tools.push(`<button type="button" class="btn-s primary" data-act="ship-many" data-fk="ship-many"${deskBusy ? " disabled" : ""}>Ship ${shipPick.size} selected ✓</button>`);
+      tools.push(`<button type="button" class="btn-s quiet" data-act="ship-clear" data-fk="ship-clear">Clear</button>`);
+    }
+    if (shippableOn.length > shipPick.size) tools.push(`<button type="button" class="btn-s" data-act="ship-pick-ready" data-fk="ship-pick-ready"${deskState === "ready" && !deskBusy ? "" : " disabled"} title="Tick every kiosk that is ready to ship">Choose all ready (${shippableOn.length})</button>`);
+    $("#desk-tools").innerHTML = tools.join("");
+  }
+
+  // a step: its name and state on the left; its button or switch on the right (below, when there are several)
+  const stepRow = (cls, name, stat, ctl, wide) => `<li class="step ${cls}${wide ? " wide" : ""}"><span class="step-ic" aria-hidden="true">✓</span><div class="min-w-0"><p class="step-name">${name}</p><p class="step-stat">${stat}</p>${wide && ctl ? `<div class="step-ctl">${ctl}</div>` : ""}</div>${!wide && ctl ? `<div class="step-ctl">${ctl}</div>` : ""}</li>`;
+  const switchHtml = (phase, on, label, locked) => `<label class="switch"${locked ? ' style="opacity:.45;cursor:not-allowed"' : ""}><input type="checkbox" role="switch" data-mark="${phase}" data-fk="mark-${phase}" aria-label="${attr(label)}"${on ? " checked" : ""}${deskBusy || locked ? " disabled" : ""}><span class="tr"></span></label>`;
+
+  function inspectorHtml(rec) {
+    const p = phasesOf(rec.serial), s = rec.serial, busy = deskBusy ? " disabled" : "";
+    const qaRows = [];
+    const rows = qaRows; // (QA1 and QA2 are collected first and put in their place below)
+    // QA1
+    const q1 = p.qa1;
+    if (q1.state === "done") {
+      const i = q1.info;
+      rows.push(stepRow("done", "QA1", q1.viaFull ? "Done as part of a full QA" : i ? `${escapeHtml(i.technician)} · ${escapeHtml(i.inspectionDate)} · ${i.fail > 0 ? `<span class="text-failtext">${i.fail} failed</span>` : `all ${i.pass} Pass`}` : "Done",
+        !q1.viaFull && i ? `<button type="button" class="btn-s" data-act="qa1-results" data-fk="qa1-results">Results</button>` : ""));
+    } else if (q1.state === "none" && lockedBy(p, "qa1")) {
+      rows.push(stepRow("", "QA1", lockText(p, "qa1"), `<button type="button" class="btn-s" disabled>Start QA1 ›</button>`));
+    } else if (q1.state === "none") {
+      rows.push(stepRow("", "QA1", "Not started: the restart rounds and the power button test", `<a class="btn-s primary" data-fk="qa1-start" href="${attr(qaUrl("qa1", [s]))}">Start QA1 ›</a>`));
+    } else {
+      const who = q1.draft.technician ? " · " + escapeHtml(q1.draft.technician) : "";
+      rows.push(stepRow("run", "QA1", (q1.state === "progress" ? "Being done right now" : "Put aside, can be resumed") + who + (q1.full ? " (a full QA)" : ""), q1.state === "paused" ? `<a class="btn-s primary" data-fk="qa1-resume" href="${attr(resumeUrl(q1.draft))}">Resume ›</a>` : ""));
+    }
+    // QA2
+    const q2 = p.qa2;
+    if (q2.state === "done") {
+      const c = countResults(q2.sub);
+      rows.push(stepRow("done", "QA2", `${escapeHtml(q2.sub.technician)} · ${escapeHtml(q2.sub.inspectionDate)} · ${c.pass} Pass${c.fail ? ` · <span class="text-failtext">${c.fail} Fail</span>` : ""}`,
+        `<button type="button" class="btn-s" data-act="results" data-fk="results">Results</button>`));
+    } else if (q2.state === "blocked") {
+      rows.push(stepRow("", "QA2", "Can be done after QA1", `<button type="button" class="btn-s" disabled>Start QA2 ›</button>`));
+    } else if (q2.state === "none" && lockedBy(p, "qa2")) {
+      rows.push(stepRow("", "QA2", lockText(p, "qa2"), `<button type="button" class="btn-s" disabled>Start QA2 ›</button>`));
+    } else if (q2.state === "none") {
+      rows.push(stepRow("", "QA2", "Not started: everything except the restarts", `<a class="btn-s primary" data-fk="qa2-start" href="${attr(qaUrl("qa2", [s]))}">Start QA2 ›</a>`));
+    } else {
+      const who = q2.draft.technician ? " · " + escapeHtml(q2.draft.technician) : "";
+      rows.push(stepRow("run", "QA2", (q2.state === "progress" ? "Being done right now" : "Put aside, can be resumed") + who + (q2.full ? " (a full QA)" : ""), q2.state === "paused" ? `<a class="btn-s primary" data-fk="qa2-resume" href="${attr(resumeUrl(q2.draft))}">Resume ›</a>` : ""));
+    }
+    // the order of the work: Vision Service, InTune, Windows activation, QA1, QA2, Final check
+    const rows2 = [];
+    const rec2 = p.rec;
+    const vsRow = stepRow(p.vs ? "done" : "", "Vision Service", p.vs ? `Checked · ${escapeHtml(rec2.vs.by)} · ${whenText(rec2.vs.at)}` : "When it is checked, the kiosk's LED turns green", switchHtml("vs", p.vs, "Vision Service"));
+    const actRow = stepRow(p.act ? "done" : "", "Windows activation", p.act ? `Activated · ${escapeHtml(rec2.act.by)} · ${whenText(rec2.act.at)}` : (lockedBy(p, "act") ? lockText(p, "act") : "Not activated yet"), switchHtml("act", p.act, "Windows activation", !p.act && !!lockedBy(p, "act")));
+    rows2.push(vsRow);
+    // InTune
+    const it = p.intune;
+    if (it.state === "none" && lockedBy(p, "intune")) rows2.push(stepRow("", "InTune", lockText(p, "intune"), `<button type="button" class="btn-s" disabled>Start InTune</button>`));
+    else if (it.state === "none") rows2.push(stepRow("", "InTune", `Not started: the timer runs ${INTUNE_DEFAULT_MIN} min`, `<button type="button" class="btn-s primary" data-act="intune-start" data-fk="intune-start"${busy}>Start InTune</button>`));
+    else if (it.state === "run") rows2.push(stepRow("run", "InTune", `Started ${whenText(it.it.startedAt)} · ${escapeHtml(it.it.by)} · ends ${timeFmt.format(new Date(it.ends))}`,
+      `<span class="countdown" data-intune-ends="${it.ends}" aria-label="Time left">${clockText(it.ends - Date.now())}</span><button type="button" class="btn-s" data-act="intune-edit" data-fk="intune-edit"${busy}>Edit time</button><button type="button" class="btn-s" data-act="intune-skip" data-fk="intune-skip"${busy}>Skip</button>`, true));
+    else rows2.push(stepRow("done", "InTune", it.skipped ? `Done · timer skipped by ${escapeHtml(it.by)} · ${whenText(it.at)}` : `Done · timer finished ${whenText(it.at)}`, `<button type="button" class="btn-s quiet" data-act="intune-reset" data-fk="intune-reset"${busy}>Reset</button>`));
+    rows2.push(actRow);
+    rows2.push(...qaRows);
+    // Final check
+    if (p.finalDone) rows2.push(stepRow("done", "Final check", escapeHtml(finalWhenBy(finalMap.get(p.key))), p.sub ? `<button type="button" class="btn-s" data-act="final" data-fk="final">Open</button>` : ""));
+    else { const fOk = p.sub && !lockedBy(p, "final");
+      rows2.push(stepRow("", "Final check", fOk ? "Not done yet" : lockText(p, "final"), `<button type="button" class="btn-s${fOk ? " primary" : ""}" data-act="final" data-fk="final"${fOk ? "" : " disabled"}>Final check</button>`)); }
+
+    const ready = p.ready;
+    return `<div class="insp" role="region" aria-label="${attr(s)}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0"><p class="font-mono text-lg font-bold tracking-wide text-graphite-100">${escapeHtml(s)}</p>
+          <p class="text-xs text-graphite-400">At ${rec.bay} · placed ${whenText(rec.placedAt)}${rec.placedBy ? " by " + escapeHtml(rec.placedBy) : ""}</p></div>
+        <button type="button" class="btn-s quiet" data-act="close" data-fk="close" aria-label="Close">✕</button>
+      </div>
+      <ul class="mt-2">${rows2.join("")}</ul>
+      ${noteBoxHtml(rec)}
+      <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-graphite-700 pt-3">
+        <button type="button" class="btn-s ${ready ? "primary" : ""}" data-act="ship" data-fk="ship"${canShip(p) && !deskBusy ? "" : " disabled"} title="${attr(canShip(p) ? "Everything is done" : "Every check has to pass first. Still to do: " + p.missing.map((k) => STEP_NAMES[k]).join(", "))}">Shipped ✓</button>
+        <button type="button" class="btn-s" data-act="move" data-fk="move"${deskBusy ? " disabled" : ""}>Move</button>
+        <button type="button" class="btn-s danger ml-auto" data-act="remove" data-fk="remove"${deskBusy ? " disabled" : ""}>Take off the desk</button>
+      </div>
+    </div>`;
+  }
+
+  // ---------- notes on a kiosk ----------
+  function noteBoxHtml(rec) {
+    const n = noteOf(rec), saved = n.note;
+    const val = noteDrafts.has(rec.serial) ? noteDrafts.get(rec.serial) : saved;
+    const dirty = val !== saved;
+    const meta = saved ? `Saved${n.by ? " by " + escapeHtml(n.by) : ""}${n.at ? " · " + escapeHtml(whenText(n.at)) : ""}${n.local ? ' · <span style="color:#C98A00">only on this computer (test)</span>' : ""}` : "No kiosk note yet";
+    return `<div class="mt-3 border-t border-graphite-700 pt-3">
+        <label for="kiosk-note" class="step-name">Kiosk note</label>
+        <textarea id="kiosk-note" data-fk="kiosk-note" data-serial="${attr(rec.serial)}" rows="3" maxlength="2000" placeholder="Anything worth knowing about this kiosk"
+          class="mt-1 w-full rounded-md border border-graphite-600 bg-graphite-800 px-2 py-1.5 text-sm text-graphite-100 placeholder:text-graphite-500 focus:border-leaf-500 focus:outline-none">${escapeHtml(val)}</textarea>
+        <div class="mt-1 flex items-center gap-2"><span class="step-stat flex-1">${meta}</span>
+          <button type="button" class="btn-s quiet${dirty ? "" : " hidden"}" data-act="note-undo" data-fk="note-undo">Undo</button>
+          <button type="button" class="btn-s primary" data-act="note-save" data-fk="note-save"${dirty && !deskBusy ? "" : " disabled"}>Save note</button></div>
+      </div>`;
+  }
+  async function noteSave(serial) {
+    if (!noteDrafts.has(serial)) return;
+    const note = noteDrafts.get(serial).trim();
+    if (deskBusy) return;
+    const by = techName();
+    if (!by) { toast("Choose who you are first.", true); return; }
+    deskBusy = true;
+    render();
+    try {
+      const data = await postJson({ action: "deskNote", serial, note, by });
+      if (data && data.ok === true) {
+        if (Array.isArray(data.desk)) { deskList = data.desk; deskState = "ready"; }
+        localNoteSet(serial, null);
+        toast(note ? "Kiosk note saved for " + serial + "." : "Kiosk note removed from " + serial + ".");
+      } else if (data && /Unknown POST action/i.test(data.error || "")) {
+        // the backend cannot store notes yet: keep it in this browser so it can be tried out
+        localNoteSet(serial, note ? { note, by, at: new Date().toISOString() } : null);
+        toast(note ? "Note saved on this computer only (test): the backend cannot store notes yet." : "Note removed.");
+      } else throw new Error((data && data.error) || "The server did not accept it.");
+      noteDrafts.delete(serial);
+    } catch (err) {
+      toast(err && err.message && !/fetch|network/i.test(err.message) ? err.message : "Could not reach the server. Nothing was changed.", true);
+    } finally {
+      deskBusy = false;
+      lastLiveSignature = liveSignature();
+      render();
+    }
+  }
+  // the bubble that shows a note: on hover or focus of the info icon, and kept open after a click
+  function notePopShow(serial, pinned) {
+    let pop = $("#note-pop");
+    if (!pop) { document.body.insertAdjacentHTML("beforeend", '<div id="note-pop" class="note-pop" role="tooltip" hidden></div>'); pop = $("#note-pop"); }
+    const ic = Array.from(document.querySelectorAll(".note-ic")).find((x) => x.dataset.note === serial);
+    const rec = deskOn().find((d) => d.serial === serial);
+    const n = noteOf(rec);
+    if (!ic || !rec || !n.note) { pop.hidden = true; if (notePinned === serial) notePinned = ""; return; }
+    pop.innerHTML = `<div class="note-pop-h"><b>${escapeHtml(serial)}</b><span>${n.by ? escapeHtml(n.by) : ""}${n.at ? " · " + escapeHtml(whenText(n.at)) : ""}${n.local ? " · this computer only" : ""}</span>${pinned ? `<button type="button" class="note-pop-x" data-note-close aria-label="Close the note">✕</button>` : ""}</div><p>${escapeHtml(n.note)}</p>`;
+    pop.classList.toggle("is-pinned", !!pinned);
+    pop.hidden = false;
+    const r = ic.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    let x = r.left, y = r.bottom + 6;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    if (y + h > window.innerHeight - 8) y = Math.max(8, r.top - h - 6);
+    pop.style.left = x + "px"; pop.style.top = y + "px";
+  }
+  function notePopRestore() {
+    if (notePinned) notePopShow(notePinned, true);
+    else { const pop = $("#note-pop"); if (pop) pop.hidden = true; }
+  }
+
+  function renderInspector() {
+    const rec = selectedSerial ? deskOn().find((d) => d.serial === selectedSerial) : null;
+    if (selectedSerial && !rec) selectedSerial = "";
+    $("#inspector").innerHTML = rec ? inspectorHtml(rec) : "";
+    $("#inspector").classList.toggle("hidden", !rec);
+    $("#desk-section").classList.toggle("lg:grid-cols-[minmax(0,1fr)_21.5rem]", !!rec);
+  }
+
+  // ---------- the Shipped kiosks table ----------
+  function stepsCellHtml(rec, key) {
+    const pill = (ok, label, title) => `<span class="badge ${ok ? "badge-pass" : "badge-wait"}" title="${attr(title)}">${ok ? "✓ " : ""}${label}</span>`;
+    return `<span class="flex flex-wrap gap-1">${pill(!!(rec && rec.vs), "Vision Service", "Vision Service")}${pill(intuneOf(rec).state === "done", "InTune", "InTune")}${pill(!!(rec && rec.act), "Act", "Windows activation")}${pill(isFinalDone(key), "Final", "Final check")}</span>`;
+  }
+
+  function shippedRowHtml(r, idx) {
+    const s = r.sub;
+    const when = r.state === "off" ? `<span class="text-graphite-500">Not shipped</span>` : escapeHtml(whenText(r.shipped && r.shipped.at) || "–");
+    const by = r.shipped && r.shipped.by ? `<span class="block text-xs text-graphite-500">${escapeHtml(r.shipped.by)}</span>` : "";
+    const c = s ? countResults(s) : null;
+    const q2 = s ? `${escapeHtml(s.technician)}<span class="block font-mono text-xs text-graphite-500">${escapeHtml(s.inspectionDate)}</span>` : `<span class="text-graphite-500">—</span>`;
+    const actions = [];
+    if (s) actions.push(`<button type="button" class="badge badge-wait" data-ship-detail="${idx}" aria-label="Details of ${attr(r.key)}">Details</button>`);
+    if (r.state === "shipped") actions.push(`<button type="button" class="btn-s quiet" data-unship="${attr(r.key)}">Take back</button>`);
+    else {
+      actions.push(`<button type="button" class="btn-s" data-place-now="${attr(r.key)}">Place on desk</button>`);
+    }
+    return `<tr${r.state === "off" ? ' class="draft-row is-unfinished"' : ""}>
+      <td class="whitespace-nowrap">${when}${by}</td>
+      <td class="whitespace-nowrap font-mono text-leaf-500">${escapeHtml(r.key)}</td>
+      <td class="whitespace-nowrap">${s ? qa1CellHtml(s) : "—"}</td>
+      <td class="whitespace-nowrap">${q2}</td>
+      <td>${c ? `<span class="badge badge-pass">${c.pass}</span>` : "—"}</td>
+      <td>${c ? `<span class="badge ${c.fail ? "badge-fail" : "badge-wait"}">${c.fail}</span>` : "—"}</td>
+      <td>${stepsCellHtml(r.rec, r.key)}</td>
+      <td class="whitespace-nowrap font-mono">${r.rec && r.rec.bay ? escapeHtml(r.rec.bay) : `<span class="text-graphite-500">—</span>`}</td>
+      <td class="whitespace-nowrap text-right"><span class="inline-flex items-center gap-1.5">${actions.join("")}</span></td>
+    </tr>`;
+  }
+
+  // The search box of the table looks only at what the table SHOWS: the serial number, the names in the row (who
+  // shipped it, who did the QA2) and the place (the desk spot, e.g. B6). Names of people who did a step somewhere else
+  // are not searched, so a row never turns up for a name that cannot be seen in it. Not case sensitive; several words
+  // must all match ("Soma A3").
+  function rowSearchText(r) {
+    const s = r.sub, d = r.rec;
+    const words = [r.key, d && d.bay, r.shipped && r.shipped.by, s && s.technician];
+    return words.filter(Boolean).join(" ").toLowerCase();
+  }
+  function rowMatches(r, q) {
+    const text = rowSearchText(r);
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => text.includes(w));
+  }
+
+  function renderShipped() {
+    const kiosks = new Map(latestPerKiosk(allSubmissions).map((s) => [serialKey(s.serial), s]));
+    const recs = deskBySerial();
+    let rows = Array.from(shippedMap.keys()).map((k) => ({ key: k, sub: kiosks.get(k) || null, shipped: shippedMap.get(k), rec: recs.get(k) || null, state: "shipped" }));
+    rows.sort((a, b) => (Date.parse(b.shipped.at) || 0) - (Date.parse(a.shipped.at) || 0));
+    const onDesk = new Set(deskOn().map((d) => d.serial));
+    const off = Array.from(kiosks.entries()).filter(([k]) => !shippedMap.has(k) && !onDesk.has(k))
+      .map(([k, s]) => ({ key: k, sub: s, shipped: null, rec: recs.get(k) || null, state: "off" }))
+      .sort((a, b) => (a.sub.inspectionDate < b.sub.inspectionDate ? 1 : -1));
+    $("#offdesk-count").textContent = off.length ? `(${off.length})` : "";
+    if (showOffDesk) rows = off.concat(rows);
+    const q = shipSearch.trim();
+    if (q) rows = rows.filter((r) => rowMatches(r, q));
+    const shown = rows.slice(0, visibleLimit);
+    shippedRowsCache = shown;
+    $("#shipped-body").innerHTML = shown.map(shippedRowHtml).join("");
+    $("#shipped-count").textContent = shipState === "ready" ? `${shippedMap.size} kiosk${shippedMap.size === 1 ? "" : "s"}` : "";
+    const empty = $("#shipped-empty");
+    empty.classList.toggle("hidden", rows.length > 0);
+    empty.textContent = q ? `No kiosk matches “${q}”. Search by serial number, name or place.` : shipState !== "ready" ? "Loading the shipped kiosks…" : "No kiosk has been shipped yet. When everything is done on the desk, press “Shipped ✓” and the kiosk appears here.";
+    $("#shipped-table-card").classList.toggle("hidden", rows.length === 0);
+    const wrap = $("#load-more-wrap");
+    wrap.classList.toggle("hidden", rows.length <= shown.length);
+    wrap.classList.toggle("flex", rows.length > shown.length);
+    $("#load-more-info").textContent = `Showing ${shown.length} of ${rows.length}`;
+  }
+
+  // ---------- the whole room ----------
+  function render() {
+    const fk = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fk : "";
+    const ta = document.activeElement && document.activeElement.tagName === "TEXTAREA" ? document.activeElement : null;
+    const taSel = ta ? [ta.selectionStart, ta.selectionEnd, ta.scrollTop] : null;
+    renderTech();
+    renderStats();
+    renderDesk();
+    renderInspector();
+    renderShipped();
+    $("#script-outdated-banner").classList.toggle("hidden", deskState !== "unsupported");
+    if (fk) {
+      const el = Array.from(document.querySelectorAll("[data-fk]")).find((x) => x.dataset.fk === fk);
+      if (el && !el.disabled) el.focus({ preventScroll: true });
+      if (el && taSel && el.tagName === "TEXTAREA") { try { el.setSelectionRange(taSel[0], taSel[1]); el.scrollTop = taSel[2]; } catch (e) {} }
+    }
+  }
+
+  function refresh() {
+    subsBySerial = new Map();
+    groupBySerial(allSubmissions).forEach((runs) => subsBySerial.set(serialKey(runs[0].serial), runs));
+    render();
+  }
+
+  // The steps of a kiosk that was on the desk, for the Details window (who did what, when).
+  function deskStepsHtml(serial) {
+    const d = deskBySerial().get(serialKey(serial));
+    if (!d) return "";
+    const it = intuneOf(d);
+    const line = (name, text) => `<p class="flex flex-wrap justify-between gap-x-3 text-sm"><span class="text-graphite-300">${name}</span><span class="text-graphite-100">${text}</span></p>`;
+    const lines = [
+      line("Put on the desk", `${d.bay ? escapeHtml(d.bay) + " · " : ""}${escapeHtml(whenText(d.placedAt))}${d.placedBy ? " · " + escapeHtml(d.placedBy) : ""}`),
+      line("Vision Service", d.vs ? `Checked · ${escapeHtml(d.vs.by)} · ${escapeHtml(whenText(d.vs.at))}` : `<span class="text-graphite-500">not done</span>`),
+      line("InTune", it.state === "done" ? `${it.skipped ? "Timer skipped" : "Timer finished"} · ${escapeHtml(it.by || "")} · ${escapeHtml(whenText(it.at))}` : it.state === "run" ? "Running" : `<span class="text-graphite-500">not done</span>`),
+      line("Windows activation", d.act ? `Activated · ${escapeHtml(d.act.by)} · ${escapeHtml(whenText(d.act.at))}` : `<span class="text-graphite-500">not done</span>`),
+    ];
+    // (the kiosk note is on the Comments tab)
+    if (d.status === "shipped") lines.push(line("Shipped", `${escapeHtml(whenText(d.shippedAt))}${d.shippedBy ? " · " + escapeHtml(d.shippedBy) : ""}`));
+    return `<div data-desk-steps><p class="${LABEL_CLS}">Assembly desk</p><div class="space-y-1">${lines.join("")}</div></div>`;
+  }
+
+  // ---------- reading what the server knows (the desk comes with the other live data) ----------
+  async function loadLive() {
+    try {
+      const res = await fetch(`${WEBHOOK_URL}?action=listLive`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.drafts) && Array.isArray(data.shipped)) {
+        return { drafts: data.drafts, shipped: data.shipped, finalChecks: Array.isArray(data.finalChecks) ? data.finalChecks : null, qa1: Array.isArray(data.qa1) ? data.qa1 : null, desk: Array.isArray(data.desk) ? data.desk : null, bays: Array.isArray(data.bays) ? data.bays : null, supported: true };
+      }
+    } catch (err) {
+      console.error("Could not load the live data:", err);
+      return null;
+    }
+    return { drafts: [], shipped: [], finalChecks: null, qa1: null, desk: null, supported: false }; // an Apps Script from before 'listLive'
+  }
+
+  let lastLiveSignature = "";
+  function liveSignature() {
+    return JSON.stringify([
+      lastDrafts.map((d) => [d.id, d.savedAt, d.technician, d.serialValues, d.paused === true, draftState(d), d.mode]),
+      Array.from(shippedMap.entries()), shipState,
+      Array.from(finalMap.entries()), finalState,
+      lastQa1.map((q) => [q.serial, q.submittedAt, q.fail]), qa1State,
+      deskList, deskState, serverBays,
+    ]);
+  }
+
+  async function refreshLive() {
+    const live = await loadLive();
+    if (live === null) { // the server could not be reached: keep what is on screen
+      if (deskState === "loading") { deskState = "unsupported"; document.getElementById("script-outdated-banner").classList.add("hidden"); }
+      return;
+    }
+    lastDrafts = live.drafts.filter((d) => (d.serialValues || []).some((v) => v)).sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+    if (live.supported) { applyShippedList(live.shipped); shipState = "ready"; } else { shipState = "unsupported"; }
+    if (live.supported && live.finalChecks) { applyFinalList(live.finalChecks); finalState = "ready"; } else { finalState = "unsupported"; }
+    if (live.supported && live.qa1) { lastQa1 = live.qa1.slice(); qa1State = "ready"; } else { qa1State = "unsupported"; }
+    if (live.supported && live.desk) { deskList = live.desk; deskState = "ready"; serverBays = live.bays; } else { deskState = "unsupported"; }
+    const signature = liveSignature();
+    if (signature === lastLiveSignature && dataLoaded) return; // redraw only when something changed
+    lastLiveSignature = signature;
+    if (dataLoaded) refresh();
+  }
+
+  function afterDataChanged() {
+    markSessions(allSubmissions);
+    refresh();
+  }
+
+  // ---------- clicks ----------
+  $("#tech-chip").addEventListener("click", () => nameDialog());
+  ["#desk", "#desk-c"].forEach((deskSel) => $(deskSel).addEventListener("click", (e) => {
+    const free = e.target.closest(".spot-free");
+    if (free && !free.disabled) { if (movingSerial) moveTo(free.dataset.bay); else placeFlow(free.dataset.bay); return; }
+    const ni = e.target.closest(".note-ic");
+    if (ni) { notePinned = notePinned === ni.dataset.note ? "" : ni.dataset.note; renderDesk(); if (!notePinned) notePopShow(ni.dataset.note, false); return; }
+    const k = e.target.closest(".kiosk-btn");
+    if (!k) return;
+    if (shipMode) { toggleShipPick(k.dataset.serial); return; }
+    if (movingSerial) { if (movingSerial === k.dataset.serial) { movingSerial = ""; render(); } return; }
+    selectedSerial = selectedSerial === k.dataset.serial ? "" : k.dataset.serial;
+    render();
+  }));
+  ["#desk", "#desk-c"].forEach((deskSel) => {
+    const over = (e) => { const ni = e.target.closest(".note-ic"); if (ni) notePopShow(ni.dataset.note, ni.dataset.note === notePinned); };
+    const out = (e) => { const ni = e.target.closest(".note-ic"); if (ni && !(e.relatedTarget && ni.contains(e.relatedTarget))) notePopRestore(); };
+    $(deskSel).addEventListener("mouseover", over); $(deskSel).addEventListener("focusin", over);
+    $(deskSel).addEventListener("mouseout", out); $(deskSel).addEventListener("focusout", out);
   });
+  window.addEventListener("resize", () => { if (notePinned) notePopShow(notePinned, true); });
+  document.addEventListener("scroll", () => { if (notePinned) notePopShow(notePinned, true); }, true);
+  $("#inspector").addEventListener("input", (e) => {
+    const t = e.target.closest("#kiosk-note");
+    if (!t) return;
+    const serial = t.dataset.serial, rec = deskOn().find((d) => d.serial === serial);
+    noteDrafts.set(serial, t.value);
+    const dirty = t.value !== noteOf(rec).note;
+    const save = $("[data-act='note-save']"), undo = $("[data-act='note-undo']");
+    if (save) save.disabled = !dirty || deskBusy;
+    if (undo) undo.classList.toggle("hidden", !dirty);
+  });
+  ["#desk", "#desk-c"].forEach((deskSel) => $(deskSel).addEventListener("change", (e) => {
+    const sb = e.target.closest("[data-ship]");
+    if (sb) { toggleShipPick(sb.dataset.ship, sb.checked); return; }
+    const b = e.target.closest("[data-batch]");
+    if (!b) return;
+    if (b.checked && batch.size >= MAX_BATCH) { b.checked = false; toast(`A QA1 takes at most ${MAX_BATCH} kiosks.`, true); return; }
+    if (b.checked) batch.add(b.dataset.batch); else batch.delete(b.dataset.batch);
+    renderDesk();
+  }));
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("[data-note-close]")) { notePinned = ""; renderDesk(); return; }
+    if (notePinned && !e.target.closest(".note-ic, #note-pop")) { notePinned = ""; renderDesk(); } // a click anywhere else closes it
+    const a = e.target.closest("[data-act]");
+    if (!a || a.disabled) return;
+    const s = selectedSerial, act = a.dataset.act;
+    if (act === "place") placeFlow(firstFreeBay());
+    else if (act === "batch-clear") { batch.clear(); render(); }
+    else if (act === "move-cancel") { movingSerial = ""; render(); }
+    else if (act === "ship-mode") { shipMode = true; shipPick.clear(); movingSerial = ""; selectedSerial = ""; render(); }
+    else if (act === "ship-cancel") { shipMode = false; shipPick.clear(); render(); }
+    else if (act === "ship-pick-ready") { deskOn().forEach((d) => { if (canShip(phasesOf(d.serial))) shipPick.add(d.serial); }); render(); }
+    else if (act === "ship-clear") { shipPick.clear(); render(); }
+    else if (act === "note-save") noteSave(s);
+    else if (act === "note-undo") { noteDrafts.delete(s); render(); }
+    else if (act === "ship-many") shipManyFlow();
+    else if (act === "close") { selectedSerial = ""; render(); }
+    else if (!s) return;
+    else if (act === "move") { movingSerial = s; toast("Click a free spot for " + s + ".", false); render(); }
+    else if (act === "remove") removeFlow(s);
+    else if (act === "ship") shipFlow(s);
+    else if (act === "intune-start" && lockedBy(phasesOf(s), "intune")) toast(lockText(phasesOf(s), "intune") + ".", true);
+    else if (act === "final" && !phasesOf(s).finalDone && lockedBy(phasesOf(s), "final")) toast(lockText(phasesOf(s), "final") + ".", true);
+    else if (act === "intune-start") deskAct({ action: "deskIntune", op: "start", serial: s, minutes: INTUNE_DEFAULT_MIN }, "InTune timer started for " + s + ": " + INTUNE_DEFAULT_MIN + " min.");
+    else if (act === "intune-edit") intuneEditFlow(s);
+    else if (act === "intune-skip") intuneSkipFlow(s);
+    else if (act === "intune-reset") intuneResetFlow(s);
+    else if (act === "final") openFinal(s);
+    else if (act === "results") { const p = phasesOf(s); if (p.sub) openDetail(p.sub); }
+    else if (act === "qa1-results") { const p = phasesOf(s); if (p.qa1.state === "done" && p.qa1.info) openQa1Detail(p.qa1.info, s, p.sub); }
+  });
+  $("#inspector").addEventListener("change", (e) => {
+    const m = e.target.closest("[data-mark]");
+    if (!m || !selectedSerial) return;
+    const phase = m.dataset.mark;
+    const lp = phasesOf(selectedSerial);
+    if (m.checked && lockedBy(lp, phase)) { toast(lockText(lp, phase) + ".", true); render(); return; }
+    deskAct({ action: "deskMark", serial: selectedSerial, phase, on: m.checked }, null).then((ok) => { if (!ok) render(); });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && movingSerial && !$("#room-dlg").open) { movingSerial = ""; render(); }
+    else if (e.key === "Escape" && notePinned && !$("#room-dlg").open) { notePinned = ""; renderDesk(); }
+    else if (e.key === "Escape" && shipMode && !$("#room-dlg").open) { shipMode = false; shipPick.clear(); render(); }
+  });
+  $("#shipped-body").addEventListener("click", (e) => {
+    const d = e.target.closest("[data-ship-detail]");
+    if (d) { const r = shippedRowsCache[Number(d.dataset.shipDetail)]; if (r && r.sub) openDetail(r.sub); return; }
+    const u = e.target.closest("[data-unship]");
+    if (u) { unshipFlow(u.dataset.unship); return; }
+    const sn = e.target.closest("[data-ship-now]");
+    if (sn) { toast("A kiosk has to pass every check on the desk before it can be shipped.", true); return; }
+    const pn = e.target.closest("[data-place-now]");
+    if (pn) placeFlow(firstFreeBay(), pn.dataset.placeNow);
+  });
+  $("#ship-search").addEventListener("input", (e) => {
+    shipSearch = e.target.value;
+    visibleLimit = PAGE_SIZE;
+    renderShipped();
+  });
+  $("#show-offdesk").addEventListener("change", (e) => { showOffDesk = e.target.checked; visibleLimit = PAGE_SIZE; renderShipped(); });
+  $("#btn-load-more").addEventListener("click", () => { visibleLimit += PAGE_SIZE; renderShipped(); });
 
-  // ---------------------------------------------------------------------
-  // LIVE UPDATES — the unfinished inspections are re-read every 30 s (it is a small
-  // list), so rows appear when someone starts a QA and turn into finished rows
-  // when it is submitted, without reloading the page. The full list of finished
-  // inspections is only re-read when an unfinished one has disappeared (it was
-  // probably submitted) and, as a safety net, every 3 minutes. Nothing is done
-  // while the tab is hidden or the Details window is open (it could be in use).
-  // ---------------------------------------------------------------------
-  const DRAFT_POLL_MS = 30000;
-  const SUBMISSION_POLL_MS = 180000;
-  let lastSubmissionsLoad = Date.now();
-  let pollBusy = false;
+  // the InTune countdowns tick every second (only their text changes); a timer that ends redraws the room once
+  setInterval(() => {
+    const now = Date.now();
+    let ended = false;
+    document.querySelectorAll("[data-intune-ends]").forEach((el) => {
+      const left = Number(el.dataset.intuneEnds) - now;
+      if (left <= 0) { ended = true; return; }
+      el.textContent = (el.classList.contains("countdown") ? "" : "InTune ") + clockText(left);
+    });
+    if (ended && dataLoaded) render();
+  }, 1000);
 
-  async function reloadSubmissionsQuietly(serialsInProgressBefore) {
+const DRAFT_POLL_MS = 30000;
+
+const SUBMISSION_POLL_MS = 180000;
+
+let lastSubmissionsLoad = Date.now();
+
+let pollBusy = false;
+
+async function reloadSubmissionsQuietly(serialsInProgressBefore) {
     const fresh = await fetchSubmissionsQuietly();
     if (!fresh) return;
     lastSubmissionsLoad = Date.now();
@@ -2156,7 +2545,7 @@
     setTimeout(() => justFinished.clear(), 6000);
   }
 
-  async function pollTick() {
+async function pollTick() {
     if (pollBusy || !dataLoaded || document.hidden) return;
     if (document.getElementById("detail-modal").classList.contains("open")) return;
     pollBusy = true;
@@ -2171,41 +2560,24 @@
     }
   }
 
-  setInterval(pollTick, DRAFT_POLL_MS);
-  document.addEventListener("visibilitychange", () => {
+setInterval(pollTick, DRAFT_POLL_MS);
+
+document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollTick(); // coming back to the tab: catch up at once
   });
-
   (async function init() {
     await ensureAccess(); // nothing is read from the Apps Script before the access code (if there is one) is known
-    loadPeople();       // the names offered in the final check window
-    refreshLive();      // drafts + shipped marks; independent of submissions, so don't block on it
-
+    loadPeople();         // the names offered when someone says who is working
+    refreshLive();        // the desk, drafts, shipped marks, final checks: independent of the submissions, so don't block on it
     const submissions = await loadSubmissions();
     if (!submissions) return;
     allSubmissions = submissions;
-    allSubmissions.forEach((s, i) => {
-      s.__order = i;
-    });
+    allSubmissions.forEach((s, i) => { s.__order = i; });
     markSessions(allSubmissions);
-    dataLoaded = true; // from now on the table (finished and in-progress rows) can be drawn
-
+    dataLoaded = true; // from now on the room can be drawn completely
     document.getElementById("load-status").classList.add("hidden");
     document.getElementById("skeleton").classList.add("hidden");
-    document.getElementById("view-tabs").classList.remove("hidden");
-    document.getElementById("view-tabs").classList.add("flex"); // (they stay out of sight until there is something to show)
-    document.getElementById("table-title").classList.remove("hidden");
-    document.getElementById("stats-grid").classList.remove("hidden");
-    document.getElementById("stats-grid").classList.add("grid");
-    document.getElementById("technicians-card").classList.remove("hidden");
-    document.getElementById("filters-card").classList.remove("hidden");
-
-    // Fixed overview — always the full totals, never affected by filters.
-    renderStats(allSubmissions);
-    renderTechnicians(allSubmissions);
-    renderChart(allSubmissions);
-
-    populateFilterOptions();
+    document.getElementById("room-wrap").classList.remove("hidden");
     refresh();
   })();
 })();
